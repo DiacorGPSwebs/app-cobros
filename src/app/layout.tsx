@@ -5,6 +5,9 @@ import { Search, FileText, Receipt, LayoutDashboard, Users } from 'lucide-react'
 export const metadata: Metadata = {
   title: "GPS Collection Center",
   description: "Management system for GPS subscriptions and collections",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 import Sidebar from "@/components/Sidebar";
