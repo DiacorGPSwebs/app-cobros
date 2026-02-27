@@ -16,6 +16,7 @@ interface Cliente {
     Dia_De_Pago: number;
     Cantidad_Vehiculo: number;
     Requiere_Factura: boolean;
+    Fecha_Ultimo_Pago?: string;
     total_deuda?: number;
     tiene_mora?: boolean;
 }
@@ -160,8 +161,11 @@ export default function ClientesPage() {
         let startDate;
         if (customStartDate) {
             startDate = customStartDate;
+        } else if (cliente.Fecha_Ultimo_Pago) {
+            // Empezamos el mes siguiente al último pago
+            startDate = addMonths(new Date(cliente.Fecha_Ultimo_Pago), 1);
         } else {
-            // Buscar la última factura
+            // Fallback: Buscar la última factura
             const lastInvoice = facturas.length > 0
                 ? facturas.reduce((latest, current) =>
                     isAfter(new Date(current.fecha_emision), new Date(latest.fecha_emision)) ? current : latest
@@ -169,11 +173,8 @@ export default function ClientesPage() {
                 : null;
 
             if (lastInvoice) {
-                // Empezamos un mes después de la última factura
                 startDate = addMonths(new Date(lastInvoice.fecha_emision), 1);
             } else {
-                // SI NO HAY FACTURAS: No sugerimos deuda automáticamente.
-                // El usuario debe elegir el punto de inicio manualmente para que sea preciso.
                 return [];
             }
         }
@@ -209,7 +210,7 @@ export default function ClientesPage() {
         try {
             const { data, error } = await supabase
                 .from('CLIENTES')
-                .select('*')
+                .select('*, Fecha_Ultimo_Pago')
                 .order('Nombre_Completo', { ascending: true });
             if (error) throw error;
 
@@ -399,6 +400,8 @@ export default function ClientesPage() {
         setIsCreating(false);
         setIsRegisteringPayment(false);
         setShowHistory(false);
+        setShowDocuments(false);
+        setIsCreatingInvoice(false);
         setIsConfirmingDeleteClient(false);
         fetchDetails(cliente.id);
     };
@@ -413,7 +416,8 @@ export default function ClientesPage() {
             Plan: 'Mensualidad',
             Dia_De_Pago: 1,
             Cantidad_Vehiculo: 0,
-            Requiere_Factura: false
+            Requiere_Factura: false,
+            Fecha_Ultimo_Pago: format(new Date(), 'yyyy-MM-dd')
         } as Cliente);
         setEditFormData({
             Nombre_Completo: '',
@@ -422,7 +426,8 @@ export default function ClientesPage() {
             Tarifa: 0,
             Plan: 'Mensualidad',
             Dia_De_Pago: 1,
-            Requiere_Factura: false
+            Requiere_Factura: false,
+            Fecha_Ultimo_Pago: format(new Date(), 'yyyy-MM-dd')
         });
         setIsEditing(false);
         setIsCreating(true);
@@ -444,6 +449,7 @@ export default function ClientesPage() {
                     Plan: editFormData.Plan,
                     Dia_De_Pago: editFormData.Plan === 'Anualidad' ? null : editFormData.Dia_De_Pago,
                     Requiere_Factura: editFormData.Requiere_Factura,
+                    Fecha_Ultimo_Pago: editFormData.Fecha_Ultimo_Pago,
                     Cantidad_Vehiculo: 0
                 }])
                 .select();
@@ -641,7 +647,8 @@ export default function ClientesPage() {
                     Tarifa: editFormData.Tarifa,
                     Plan: editFormData.Plan,
                     Dia_De_Pago: editFormData.Dia_De_Pago,
-                    Requiere_Factura: editFormData.Requiere_Factura
+                    Requiere_Factura: editFormData.Requiere_Factura,
+                    Fecha_Ultimo_Pago: editFormData.Fecha_Ultimo_Pago
                 })
                 .eq('id', selectedCliente.id);
 
@@ -904,6 +911,11 @@ export default function ClientesPage() {
                                         <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isAnual ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.1)]' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]'}`}>
                                             {cliente.Plan || 'Mensual'}
                                         </span>
+                                        {cliente.Fecha_Ultimo_Pago && (
+                                            <div className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tighter">
+                                                Último Pago: {format(new Date(cliente.Fecha_Ultimo_Pago), 'dd/MM/yy')}
+                                            </div>
+                                        )}
                                         {cliente.Requiere_Factura && (
                                             <div className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500/80 bg-yellow-500/5 px-2 py-1 rounded-lg border border-yellow-500/10 uppercase tracking-tighter">
                                                 <Calculator size={10} /> Factura E.
@@ -914,26 +926,48 @@ export default function ClientesPage() {
 
                                 {/* Debt Indicator - Implementation */}
                                 <div className="mt-6">
-                                    <div className={`flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5 group-hover:bg-white/10 transition-all ${cliente.tiene_mora ? 'border-red-500/20' : ''}`}>
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${cliente.tiene_mora ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary'}`}>
-                                                <CreditCard size={18} />
+                                    {(() => {
+                                        const lastPaymentDate = cliente.Fecha_Ultimo_Pago ? startOfMonth(new Date(cliente.Fecha_Ultimo_Pago)) : startOfMonth(new Date());
+                                        const currentMonth = startOfMonth(new Date());
+
+                                        // Calculate months difference
+                                        let monthsOwed = 0;
+                                        if (cliente.Fecha_Ultimo_Pago) {
+                                            const intervals = eachMonthOfInterval({
+                                                start: addMonths(lastPaymentDate, 1),
+                                                end: currentMonth
+                                            });
+                                            monthsOwed = intervals.length;
+                                        }
+
+                                        const statusLabel = monthsOwed === 0 ? 'AL DÍA' : monthsOwed === 1 ? 'DEBE 1 MES' : `DEBE ${monthsOwed} MESES`;
+                                        const statusColor = monthsOwed === 0 ? 'text-green-500' : monthsOwed === 1 ? 'text-yellow-500' : 'text-red-500';
+                                        const bgColor = monthsOwed === 0 ? 'bg-green-500/5' : monthsOwed === 1 ? 'bg-yellow-500/5' : 'bg-red-500/5';
+                                        const borderColor = monthsOwed === 0 ? 'border-green-500/10' : monthsOwed === 1 ? 'border-yellow-500/10' : 'border-red-500/10';
+
+                                        return (
+                                            <div className={`flex items-center justify-between p-4 rounded-2xl ${bgColor} border ${borderColor} transition-all`}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${statusColor} bg-white/5`}>
+                                                        {monthsOwed === 0 ? <ShieldCheck size={18} /> : <Clock size={18} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Cartera</p>
+                                                        <p className={`text-lg font-black ${statusColor}`}>
+                                                            ${(cliente.total_deuda || 0).toLocaleString()}
+                                                            <span className="text-[10px] text-muted-foreground ml-2 font-medium">SALDO</span>
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Estado</p>
+                                                    <span className={`text-[10px] font-black uppercase ${statusColor} ${monthsOwed > 1 ? 'animate-pulse' : ''}`}>
+                                                        {statusLabel}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Cartera</p>
-                                                <p className={`text-lg font-black ${cliente.tiene_mora ? 'text-red-500' : 'text-white'}`}>
-                                                    ${cliente.total_deuda?.toLocaleString() || '0'}
-                                                    <span className="text-[10px] text-muted-foreground ml-2 font-medium">PENDIENTE</span>
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Estado</p>
-                                            <span className={`text-[10px] font-black uppercase ${cliente.tiene_mora ? 'text-red-500 animate-pulse' : (cliente.total_deuda || 0) > 0 ? 'text-yellow-500' : 'text-green-500'}`}>
-                                                {cliente.tiene_mora ? 'En Mora (>60d)' : (cliente.total_deuda || 0) > 0 ? 'Con Deuda' : 'Al Día'}
-                                            </span>
-                                        </div>
-                                    </div>
+                                        );
+                                    })()}
                                 </div>
 
 
@@ -963,12 +997,24 @@ export default function ClientesPage() {
                                     <p className="text-xs text-muted-foreground/60 font-medium truncate max-w-[140px] italic">
                                         {cliente.Correo || 'Sin correo electrónico'}
                                     </p>
-                                    <button
-                                        onClick={() => handleOpenDetails(cliente)}
-                                        className="flex items-center gap-2 text-xs font-black text-primary px-5 py-2.5 rounded-xl bg-primary/5 hover:bg-primary/20 border border-primary/10 transition-all hover:translate-x-1"
-                                    >
-                                        DETALLES <ChevronRight size={14} />
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenDetails(cliente);
+                                                setShowDocuments(true);
+                                            }}
+                                            className="flex items-center gap-2 text-[10px] font-black text-white/70 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all"
+                                        >
+                                            <Receipt size={14} /> DEUDA
+                                        </button>
+                                        <button
+                                            onClick={() => handleOpenDetails(cliente)}
+                                            className="flex items-center gap-2 text-[10px] font-black text-primary px-4 py-2.5 rounded-xl bg-primary/5 hover:bg-primary/20 border border-primary/10 transition-all hover:translate-x-1"
+                                        >
+                                            DETALLES <ChevronRight size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -1150,8 +1196,59 @@ export default function ClientesPage() {
                                 /* VISTA CREAR FACTURA */
                                 <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                     <h3 className="text-2xl font-black text-white flex items-center gap-4">
-                                        <Receipt size={28} className="text-primary" /> Crear Nueva Factura
+                                        <Receipt size={28} className="text-primary" /> Registrar Deuda Pendiente
                                     </h3>
+
+                                    <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/20">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Seleccione los meses a facturar:</p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            {(() => {
+                                                const lastPaymentDate = selectedCliente.Fecha_Ultimo_Pago ? startOfMonth(new Date(selectedCliente.Fecha_Ultimo_Pago)) : startOfMonth(new Date());
+                                                const currentMonth = startOfMonth(new Date());
+                                                const periods = eachMonthOfInterval({
+                                                    start: addMonths(lastPaymentDate, 1),
+                                                    end: currentMonth
+                                                }).map(date => ({
+                                                    label: format(date, 'MMMM yyyy', { locale: es }),
+                                                    date: date
+                                                }));
+
+                                                if (periods.length === 0) return <p className="text-xs text-muted-foreground italic col-span-2 py-4 text-center">No hay meses pendientes de cobro.</p>;
+
+                                                return periods.map((period, idx) => {
+                                                    const isChecked = invoiceFormData.periodos.some(p => p.label === period.label);
+                                                    return (
+                                                        <label key={idx} className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${isChecked ? 'bg-primary/20 border-primary shadow-lg shadow-primary/10' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                                                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                                                {isChecked && <Check size={14} className="text-white" />}
+                                                            </div>
+                                                            <input
+                                                                type="checkbox"
+                                                                className="hidden"
+                                                                checked={isChecked}
+                                                                onChange={(e) => {
+                                                                    let newPeriods = [...invoiceFormData.periodos];
+                                                                    if (e.target.checked) {
+                                                                        newPeriods.push(period);
+                                                                    } else {
+                                                                        newPeriods = newPeriods.filter(p => p.label !== period.label);
+                                                                    }
+
+                                                                    setInvoiceFormData({
+                                                                        ...invoiceFormData,
+                                                                        periodos: newPeriods,
+                                                                        meses: newPeriods.length,
+                                                                        monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * newPeriods.length
+                                                                    });
+                                                                }}
+                                                            />
+                                                            <span className="text-xs font-black uppercase tracking-tighter text-white">{period.label}</span>
+                                                        </label>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-3">
@@ -1161,28 +1258,6 @@ export default function ClientesPage() {
                                                 readOnly
                                                 value={invoiceFormData.numero}
                                                 className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white font-bold opacity-70"
-                                            />
-                                        </div>
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Facturar Deuda desde:</label>
-                                            <input
-                                                type="month"
-                                                value={invoiceFormData.desde_mes}
-                                                onChange={(e) => {
-                                                    const val = e.target.value;
-                                                    // Buscamos el día de pago en ese mes seleccionado
-                                                    const customDate = setDate(new Date(val + '-01'), selectedCliente?.Dia_De_Pago || 1);
-                                                    const periods = detectOwedPeriods(selectedCliente!, clientDocs.facturas, customDate);
-                                                    const count = periods.length;
-                                                    setInvoiceFormData({
-                                                        ...invoiceFormData,
-                                                        desde_mes: val,
-                                                        meses: count,
-                                                        periodos: periods,
-                                                        monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * count
-                                                    });
-                                                }}
-                                                className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none focus:ring-2 focus:ring-primary/40 text-white font-bold"
                                             />
                                         </div>
                                         <div className="space-y-3">
@@ -1267,6 +1342,15 @@ export default function ClientesPage() {
                                             <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Marcar si esta factura requiere protocolo de la DGI</p>
                                         </div>
                                     </label>
+
+                                    <button
+                                        onClick={handleSaveInvoice}
+                                        disabled={isSaving || invoiceFormData.periodos.length === 0}
+                                        className="w-full premium-gradient py-6 rounded-[2rem] font-black text-xl shadow-2xl shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-50 disabled:hover:scale-100"
+                                    >
+                                        {isSaving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
+                                        CONFIRMAR REGISTRO DE DEUDA
+                                    </button>
                                 </div>
                             ) : isEditing || isCreating ? (
                                 /* VISTA EDICIÓN INTEGRAL O CREACIÓN */
@@ -1339,6 +1423,15 @@ export default function ClientesPage() {
                                                     </select>
                                                 </div>
                                             )}
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Fecha Último Pago</label>
+                                                <input
+                                                    type="date"
+                                                    value={editFormData.Fecha_Ultimo_Pago || format(new Date(), 'yyyy-MM-dd')}
+                                                    onChange={(e) => setEditFormData({ ...editFormData, Fecha_Ultimo_Pago: e.target.value })}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-primary/40 focus:bg-white/10 transition-all font-medium text-white"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
