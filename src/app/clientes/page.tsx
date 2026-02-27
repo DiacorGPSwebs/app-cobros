@@ -403,6 +403,16 @@ export default function ClientesPage() {
         setShowDocuments(false);
         setIsCreatingInvoice(false);
         setIsConfirmingDeleteClient(false);
+
+        // Inicializar formulario de deuda
+        setInvoiceFormData(prev => ({
+            ...prev,
+            desde_mes: cliente.Fecha_Ultimo_Pago ? format(startOfMonth(new Date(cliente.Fecha_Ultimo_Pago)), 'yyyy-MM-dd') : '',
+            periodos: [],
+            meses: 0,
+            monto: 0
+        }));
+
         fetchDetails(cliente.id);
     };
 
@@ -488,7 +498,13 @@ export default function ClientesPage() {
 
             if (error) throw error;
 
-            // Log activity or similar if needed
+            // 2. ACTUALIZAR LA FECHA DE ÚLTIMO PAGO EN CLIENTE
+            if (invoiceFormData.desde_mes) {
+                await supabase
+                    .from('CLIENTES')
+                    .update({ Fecha_Ultimo_Pago: invoiceFormData.desde_mes })
+                    .eq('id', selectedCliente.id);
+            }
 
             // Success
             setIsCreatingInvoice(false);
@@ -1199,51 +1215,78 @@ export default function ClientesPage() {
                                         <Receipt size={28} className="text-primary" /> Registrar Deuda Pendiente
                                     </h3>
 
-                                    <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/20">
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Seleccione los meses a facturar:</p>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/5">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Paso 1: Selección de Último Pago</p>
+                                                <h4 className="text-xl font-black text-white">¿Cuál fue el último mes que pagó el cliente?</h4>
+                                            </div>
+                                            {invoiceFormData.periodos.length > 0 && (
+                                                <div className="bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-2xl animate-pulse">
+                                                    <p className="text-[10px] font-black text-red-500 uppercase tracking-widest">Deuda Detectada</p>
+                                                    <p className="text-sm font-bold text-white">{invoiceFormData.meses} {invoiceFormData.meses === 1 ? 'Mes' : 'Meses'} pendientes</p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                             {(() => {
-                                                const lastPaymentDate = selectedCliente.Fecha_Ultimo_Pago ? startOfMonth(new Date(selectedCliente.Fecha_Ultimo_Pago)) : startOfMonth(new Date());
                                                 const currentMonth = startOfMonth(new Date());
-                                                const periods = eachMonthOfInterval({
-                                                    start: addMonths(lastPaymentDate, 1),
-                                                    end: currentMonth
-                                                }).map(date => ({
-                                                    label: format(date, 'MMMM yyyy', { locale: es }),
-                                                    date: date
-                                                }));
+                                                // Últimos 12 meses
+                                                const months = Array.from({ length: 12 }, (_, i) => startOfMonth(subMonths(currentMonth, 11 - i)));
 
-                                                if (periods.length === 0) return <p className="text-xs text-muted-foreground italic col-span-2 py-4 text-center">No hay meses pendientes de cobro.</p>;
+                                                return months.map((month, idx) => {
+                                                    const label = format(month, 'MMMM yyyy', { locale: es });
+                                                    const isoDate = format(month, 'yyyy-MM-dd');
+                                                    const lastPaidDate = (invoiceFormData.desde_mes && invoiceFormData.desde_mes !== '')
+                                                        ? startOfMonth(new Date(invoiceFormData.desde_mes))
+                                                        : null;
 
-                                                return periods.map((period, idx) => {
-                                                    const isChecked = invoiceFormData.periodos.some(p => p.label === period.label);
+                                                    const isSelected = invoiceFormData.desde_mes === isoDate;
+                                                    const isAfterLastPaid = lastPaidDate && isAfter(month, lastPaidDate);
+                                                    const isPaid = lastPaidDate && !isAfter(month, lastPaidDate);
+
+                                                    // Determinar estado visual
+                                                    let statusClasses = "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10";
+                                                    let icon = null;
+
+                                                    if (isSelected) {
+                                                        statusClasses = "bg-primary border-primary text-white shadow-lg shadow-primary/20 scale-[1.02] z-10";
+                                                        icon = <ShieldCheck size={14} className="mb-1" />;
+                                                    } else if (isPaid) {
+                                                        statusClasses = "bg-green-500/10 border-green-500/20 text-green-500/50 opacity-60";
+                                                        icon = <Check size={14} className="mb-1 opacity-40" />;
+                                                    } else if (isAfterLastPaid) {
+                                                        statusClasses = "bg-red-500/10 border-red-500/20 text-red-500 border-dashed animate-pulse";
+                                                        icon = <Clock size={14} className="mb-1" />;
+                                                    }
+
                                                     return (
-                                                        <label key={idx} className={`flex items-center gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${isChecked ? 'bg-primary/20 border-primary shadow-lg shadow-primary/10' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                                                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${isChecked ? 'bg-primary border-primary' : 'border-white/20'}`}>
-                                                                {isChecked && <Check size={14} className="text-white" />}
-                                                            </div>
-                                                            <input
-                                                                type="checkbox"
-                                                                className="hidden"
-                                                                checked={isChecked}
-                                                                onChange={(e) => {
-                                                                    let newPeriods = [...invoiceFormData.periodos];
-                                                                    if (e.target.checked) {
-                                                                        newPeriods.push(period);
-                                                                    } else {
-                                                                        newPeriods = newPeriods.filter(p => p.label !== period.label);
-                                                                    }
+                                                        <button
+                                                            key={idx}
+                                                            onClick={() => {
+                                                                const owedPeriods = eachMonthOfInterval({
+                                                                    start: addMonths(month, 1),
+                                                                    end: currentMonth
+                                                                }).map(d => ({
+                                                                    label: format(d, 'MMMM yyyy', { locale: es }),
+                                                                    date: d
+                                                                }));
 
-                                                                    setInvoiceFormData({
-                                                                        ...invoiceFormData,
-                                                                        periodos: newPeriods,
-                                                                        meses: newPeriods.length,
-                                                                        monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * newPeriods.length
-                                                                    });
-                                                                }}
-                                                            />
-                                                            <span className="text-xs font-black uppercase tracking-tighter text-white">{period.label}</span>
-                                                        </label>
+                                                                setInvoiceFormData({
+                                                                    ...invoiceFormData,
+                                                                    desde_mes: isoDate,
+                                                                    periodos: owedPeriods,
+                                                                    meses: owedPeriods.length,
+                                                                    monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * owedPeriods.length
+                                                                });
+                                                            }}
+                                                            className={`flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 font-bold uppercase text-[10px] tracking-tighter text-center h-24 ${statusClasses}`}
+                                                        >
+                                                            {icon}
+                                                            {label.split(' ')[0]}
+                                                            <span className="opacity-60 block text-[8px] mt-0.5">{label.split(' ')[1]}</span>
+                                                        </button>
                                                     );
                                                 });
                                             })()}
@@ -1349,7 +1392,7 @@ export default function ClientesPage() {
                                         className="w-full premium-gradient py-6 rounded-[2rem] font-black text-xl shadow-2xl shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-50 disabled:hover:scale-100"
                                     >
                                         {isSaving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
-                                        CONFIRMAR REGISTRO DE DEUDA
+                                        REGISTRAR DEUDA
                                     </button>
                                 </div>
                             ) : isEditing || isCreating ? (
