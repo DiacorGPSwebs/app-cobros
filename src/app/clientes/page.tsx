@@ -509,7 +509,6 @@ export default function ClientesPage() {
                             monto_subtotal: item.monto,
                             fecha_emision: invoiceFormData.fecha_emision,
                             fecha_vencimiento: invoiceFormData.fecha_vencimiento,
-                            periodo: item.label,
                             estado: 'pendiente',
                             es_electronica: invoiceFormData.es_electronica
                         }]);
@@ -533,9 +532,14 @@ export default function ClientesPage() {
 
             // 2. ACTUALIZAR LA FECHA DE ÚLTIMO PAGO EN CLIENTE
             if (invoiceFormData.desde_mes) {
+                // Asegurar formato YYYY-MM-DD
+                const formattedDate = invoiceFormData.desde_mes.includes('-') && invoiceFormData.desde_mes.split('-').length === 2
+                    ? `${invoiceFormData.desde_mes}-01`
+                    : invoiceFormData.desde_mes;
+
                 await supabase
                     .from('CLIENTES')
-                    .update({ Fecha_Ultimo_Pago: invoiceFormData.desde_mes })
+                    .update({ Fecha_Ultimo_Pago: formattedDate })
                     .eq('id', selectedCliente.id);
             }
 
