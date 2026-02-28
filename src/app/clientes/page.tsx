@@ -661,6 +661,36 @@ export default function ClientesPage() {
                         .from('Facturas')
                         .update({ estado: nuevoEstado })
                         .eq('id', paymentFormData.factura_id);
+
+                    // 4. ACTUALIZAR FECHA DE ÚLTIMO PAGO SI LA FACTURA TIENE PERIODO Y ESTÁ PAGADA
+                    if (nuevoEstado === 'pagada' && invoice.periodo) {
+                        try {
+                            // Extraer fecha del periodo (ej: "Febrero 2026")
+                            const parts = invoice.periodo.split(' ');
+                            if (parts.length === 2) {
+                                const mesStr = parts[0].toLowerCase();
+                                const anio = parseInt(parts[1]);
+                                const meses: any = {
+                                    enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5,
+                                    julio: 6, agosto: 7, septiembre: 8, octubre: 9, noviembre: 10, diciembre: 11
+                                };
+                                if (meses[mesStr] !== undefined) {
+                                    const periodDate = new Date(anio, meses[mesStr], 1);
+
+                                    // Solo actualizar si es posterior a la actual
+                                    const currentLastPaid = selectedCliente.Fecha_Ultimo_Pago ? new Date(selectedCliente.Fecha_Ultimo_Pago) : new Date(0);
+                                    if (isAfter(periodDate, currentLastPaid)) {
+                                        await supabase
+                                            .from('CLIENTES')
+                                            .update({ Fecha_Ultimo_Pago: format(periodDate, 'yyyy-MM-dd') })
+                                            .eq('id', selectedCliente.id);
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Error actualizando fecha de último pago:', e);
+                        }
+                    }
                 }
             }
 
@@ -982,10 +1012,21 @@ export default function ClientesPage() {
                                             monthsOwed = intervals.length;
                                         }
 
-                                        const statusLabel = monthsOwed === 0 ? 'AL DÍA' : monthsOwed === 1 ? 'DEBE 1 MES' : `DEBE ${monthsOwed} MESES`;
-                                        const statusColor = monthsOwed === 0 ? 'text-green-500' : monthsOwed === 1 ? 'text-yellow-500' : 'text-red-500';
-                                        const bgColor = monthsOwed === 0 ? 'bg-green-500/5' : monthsOwed === 1 ? 'bg-yellow-500/5' : 'bg-red-500/5';
-                                        const borderColor = monthsOwed === 0 ? 'border-green-500/10' : monthsOwed === 1 ? 'border-yellow-500/10' : 'border-red-500/10';
+                                        const statusLabel = (cliente.total_deuda || 0) === 0
+                                            ? (monthsOwed === 0 ? 'AL DÍA' : `SIN FACTURAR (${monthsOwed})`)
+                                            : monthsOwed === 1 ? 'DEBE 1 MES' : `DEBE ${monthsOwed} MESES`;
+
+                                        const statusColor = (cliente.total_deuda || 0) === 0
+                                            ? (monthsOwed === 0 ? 'text-green-500' : 'text-blue-400')
+                                            : monthsOwed === 1 ? 'text-yellow-500' : 'text-red-500';
+
+                                        const bgColor = (cliente.total_deuda || 0) === 0
+                                            ? (monthsOwed === 0 ? 'bg-green-500/5' : 'bg-blue-500/5')
+                                            : monthsOwed === 1 ? 'bg-yellow-500/5' : 'bg-red-500/5';
+
+                                        const borderColor = (cliente.total_deuda || 0) === 0
+                                            ? (monthsOwed === 0 ? 'border-green-500/10' : 'border-blue-500/10')
+                                            : monthsOwed === 1 ? 'border-yellow-500/10' : 'border-red-500/10';
 
                                         return (
                                             <div className={`flex items-center justify-between p-4 rounded-2xl ${bgColor} border ${borderColor} transition-all`}>
