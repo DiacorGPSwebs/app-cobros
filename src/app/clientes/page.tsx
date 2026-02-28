@@ -185,37 +185,37 @@ export default function ClientesPage() {
         startDate = setDate(startDate, paymentDay);
 
         // Generar lista de meses desde startDate hasta today
+        const owed: any[] = [];
         try {
             const startM = startOfMonth(startDate);
-            const endM = startOfMonth(today);
+            const todayM = startOfMonth(today);
 
-            if (isAfter(startM, endM)) {
+            if (isAfter(startM, todayM)) {
                 return [];
             }
 
             const intervals = eachMonthOfInterval({
                 start: startM,
-                end: endM
+                end: todayM
             });
 
-            return intervals.map(date => {
+            intervals.forEach(date => {
                 const billingDate = setDate(date, paymentDay);
-                return {
-                    label: format(billingDate, 'MMMM yyyy', { locale: es }),
-                    date: billingDate
-                };
-            }).filter(p => !isAfter(p.date, today)); // FILTRO ESTRICTO: Solo si ya pasó la fecha
+                // Solo es deuda si la billingDate es hoy o en el pasado
+                if (!isAfter(billingDate, today)) {
+                    owed.push({
+                        label: format(billingDate, 'MMMM yyyy', { locale: es }),
+                        date: billingDate
+                    });
+                }
+            });
+            return owed;
         } catch (e) {
-            // Si hay error en intervalos, verificar solo hoy de forma estricta
-            const billingDateToday = setDate(today, paymentDay);
-            if (!isAfter(billingDateToday, today)) {
-                return [{ label: format(billingDateToday, 'MMMM yyyy', { locale: es }), date: billingDateToday }];
-            }
             return [];
         }
     };
 
-    async function fetchClientes() {
+    const fetchClientes = async () => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase
@@ -256,9 +256,9 @@ export default function ClientesPage() {
         } finally {
             setIsLoading(false);
         }
-    }
+    };
 
-    async function fetchDetails(clienteId: number) {
+    const fetchDetails = async (clienteId: number) => {
         setIsLoadingDetails(true);
         try {
             const { data: usuarios, error: uError } = await supabase
@@ -328,7 +328,7 @@ export default function ClientesPage() {
         } finally {
             setIsLoadingDetails(false);
         }
-    }
+    };
 
     const addEmptyUsuario = () => {
         const newId = -Date.now();
@@ -1036,31 +1036,9 @@ export default function ClientesPage() {
                                 {/* Debt Indicator - Implementation */}
                                 <div className="mt-6">
                                     {(() => {
-                                        let lastPaymentDate = startOfMonth(new Date());
-                                        if (cliente.Fecha_Ultimo_Pago) {
-                                            const [y, m, d] = cliente.Fecha_Ultimo_Pago.split('-').map(Number);
-                                            lastPaymentDate = startOfMonth(new Date(y, m - 1, d));
-                                        }
-                                        const currentMonth = startOfMonth(new Date());
-
-                                        // Calculate months difference
-                                        let monthsOwed = 0;
-                                        if (cliente.Fecha_Ultimo_Pago) {
-                                            try {
-                                                const startM = startOfMonth(addMonths(lastPaymentDate, 1));
-                                                const endM = startOfMonth(currentMonth);
-
-                                                if (!isAfter(startM, endM)) {
-                                                    const intervals = eachMonthOfInterval({
-                                                        start: startM,
-                                                        end: endM
-                                                    });
-                                                    monthsOwed = intervals.length;
-                                                }
-                                            } catch (e) {
-                                                monthsOwed = 0;
-                                            }
-                                        }
+                                        // Calculate months owed using the unified function
+                                        const owedPeriods = detectOwedPeriods(cliente, []);
+                                        const monthsOwed = owedPeriods.length;
 
                                         const statusLabel = (cliente.total_deuda || 0) === 0
                                             ? (monthsOwed === 0 ? 'AL DÍA' : `SIN FACTURAR (${monthsOwed})`)
@@ -1385,13 +1363,8 @@ export default function ClientesPage() {
                                                         <button
                                                             key={idx}
                                                             onClick={() => {
-                                                                const owedPeriods = eachMonthOfInterval({
-                                                                    start: addMonths(month, 1),
-                                                                    end: currentMonth
-                                                                }).map(d => ({
-                                                                    label: format(d, 'MMMM yyyy', { locale: es }),
-                                                                    date: d
-                                                                }));
+                                                                const nextMonth = addMonths(month, 1);
+                                                                const owedPeriods = detectOwedPeriods(selectedCliente!, [], nextMonth);
 
                                                                 const count = owedPeriods.length;
                                                                 const detailed = owedPeriods.map(p => ({
@@ -1519,8 +1492,14 @@ export default function ClientesPage() {
                                         disabled={isSaving || invoiceFormData.meses_detallados.length === 0}
                                         className="w-full premium-gradient py-6 rounded-[2rem] font-black text-xl shadow-2xl shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-50 disabled:hover:scale-100"
                                     >
-                                        {isSaving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
-                                        GENERAR {invoiceFormData.meses_detallados.length} FACTURAS INDIVIDUALES
+                                        {isSaving ? (
+                                            <Loader2 className="animate-spin" size={24} />
+                                        ) : invoiceFormData.meses_detallados.length === 0 ? (
+                                            <ShieldCheck size={24} />
+                                        ) : (
+                                            <Save size={24} />
+                                        )}
+                                        {invoiceFormData.meses_detallados.length === 0 ? 'AL DÍA' : `GENERAR ${invoiceFormData.meses_detallados.length} FACTURAS INDIVIDUALES`}
                                     </button>
                                 </div>
                             ) : isEditing || isCreating ? (
@@ -2145,8 +2124,14 @@ export default function ClientesPage() {
                                         disabled={isSaving || invoiceFormData.meses_detallados.length === 0}
                                         className="flex-1 premium-gradient py-5 rounded-2xl font-black text-white shadow-2xl shadow-blue-500/40 active:scale-95 transition-all flex items-center justify-center gap-3 text-sm uppercase tracking-widest disabled:opacity-50"
                                     >
-                                        {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                        GENERAR {invoiceFormData.meses_detallados.length} FACTURAS
+                                        {isSaving ? (
+                                            <Loader2 className="animate-spin" size={20} />
+                                        ) : invoiceFormData.meses_detallados.length === 0 ? (
+                                            <ShieldCheck size={20} />
+                                        ) : (
+                                            <Save size={20} />
+                                        )}
+                                        {invoiceFormData.meses_detallados.length === 0 ? 'AL DÍA' : `GENERAR ${invoiceFormData.meses_detallados.length} FACTURAS`}
                                     </button>
                                 </>
                             ) : showHistory || showDocuments ? (
