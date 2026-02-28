@@ -500,13 +500,31 @@ export default function ClientesPage() {
             if (invoiceFormData.meses_detallados.length > 0) {
                 for (const item of invoiceFormData.meses_detallados) {
                     const nextNum = await getNextInvoiceNumber();
+
+                    // Cálculo de ITBMS y Totales
+                    const subtotal = item.monto;
+                    const itbms = selectedCliente.Requiere_Factura ? Number((subtotal * 0.07).toFixed(2)) : 0;
+                    const total = Number((subtotal + itbms).toFixed(2));
+
+                    // Preparar items JSONB
+                    const invoiceItems = [
+                        {
+                            descripcion: `Mensualidad de servicio de rastreo GPS ${item.label}`,
+                            cantidad: item.equipos,
+                            precio: selectedCliente.Tarifa || 0,
+                            total: subtotal
+                        }
+                    ];
+
                     const { error: fError } = await supabase
                         .from('Facturas')
                         .insert([{
                             cliente_id: selectedCliente.id,
                             numero_factura: `${nextNum} (${item.label})`,
-                            monto_total: item.monto,
-                            monto_subtotal: item.monto,
+                            monto_subtotal: subtotal,
+                            monto_itbms: itbms,
+                            monto_total: total,
+                            items: invoiceItems,
                             fecha_emision: invoiceFormData.fecha_emision,
                             fecha_vencimiento: invoiceFormData.fecha_vencimiento,
                             estado: 'pendiente',
@@ -516,13 +534,20 @@ export default function ClientesPage() {
                 }
             } else {
                 const nextNum = await getNextInvoiceNumber();
+
+                // Cálculo de ITBMS y Totales para factura manual/única
+                const subtotal = invoiceFormData.monto;
+                const itbms = selectedCliente.Requiere_Factura ? Number((subtotal * 0.07).toFixed(2)) : 0;
+                const total = Number((subtotal + itbms).toFixed(2));
+
                 const { error: fError } = await supabase
                     .from('Facturas')
                     .insert([{
                         cliente_id: selectedCliente.id,
                         numero_factura: invoiceFormData.numero || nextNum,
-                        monto_total: invoiceFormData.monto,
-                        monto_subtotal: invoiceFormData.monto,
+                        monto_subtotal: subtotal,
+                        monto_itbms: itbms,
+                        monto_total: total,
                         fecha_emision: invoiceFormData.fecha_emision,
                         fecha_vencimiento: invoiceFormData.fecha_vencimiento,
                         estado: 'pendiente'
