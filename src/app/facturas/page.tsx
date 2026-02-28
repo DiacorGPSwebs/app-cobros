@@ -10,6 +10,8 @@ export default function FacturasPage() {
     const [facturas, setFacturas] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [showFilters, setShowFilters] = useState(false);
     const [selectedFactura, setSelectedFactura] = useState<any>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
@@ -224,6 +226,23 @@ export default function FacturasPage() {
         );
     }
 
+    const metrics = {
+        pendiente: facturas.filter(f => f.estado === 'pendiente' || f.estado === 'abono').reduce((sum, f) => sum + (f.monto_total - (f.monto_pagado || 0)), 0),
+        pagado: facturas.filter(f => f.estado === 'pagada').reduce((sum, f) => sum + f.monto_total, 0),
+        vencido: facturas.filter(f => (f.estado === 'pendiente' || f.estado === 'abono') && new Date(f.fecha_vencimiento) < new Date()).reduce((sum, f) => sum + (f.monto_total - (f.monto_pagado || 0)), 0)
+    };
+
+    const filteredFacturas = facturas.filter(fac => {
+        const query = searchTerm.toLowerCase();
+        const matchesSearch = searchTerm === '' ||
+            fac.numero_factura.toLowerCase().includes(query) ||
+            (fac.CLIENTES?.Nombre_Completo || '').toLowerCase().includes(query);
+
+        const matchesStatus = filterStatus === 'all' || fac.estado === filterStatus || (filterStatus === 'pendiente' && fac.estado === 'abono');
+
+        return matchesSearch && matchesStatus;
+    });
+
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
             <div>
@@ -234,15 +253,15 @@ export default function FacturasPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-card/30 border border-border p-5 rounded-3xl backdrop-blur-sm">
                     <p className="text-sm text-muted-foreground mb-1">Pendiente</p>
-                    <p className="text-2xl font-bold text-yellow-500">$0.00</p>
+                    <p className="text-2xl font-bold text-yellow-500">${metrics.pendiente.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="bg-card/30 border border-border p-5 rounded-3xl backdrop-blur-sm">
-                    <p className="text-sm text-muted-foreground mb-1">Pagado (Mes)</p>
-                    <p className="text-2xl font-bold text-green-500">$0.00</p>
+                    <p className="text-sm text-muted-foreground mb-1">Pagado (Total)</p>
+                    <p className="text-2xl font-bold text-green-500">${metrics.pagado.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="bg-card/30 border border-border p-5 rounded-3xl backdrop-blur-sm">
                     <p className="text-sm text-muted-foreground mb-1">Vencido</p>
-                    <p className="text-2xl font-bold text-red-500">$0.00</p>
+                    <p className="text-2xl font-bold text-red-500">${metrics.vencido.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="bg-card/30 border border-border p-5 rounded-3xl backdrop-blur-sm flex items-center justify-between">
                     <div>
@@ -264,9 +283,21 @@ export default function FacturasPage() {
                         className="w-full bg-card/50 border border-border rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                     />
                 </div>
-                <button className="px-6 py-4 bg-card/50 border border-border rounded-2xl flex items-center gap-2 hover:bg-muted/50 transition-all font-medium text-sm">
-                    <Filter size={18} /> Filtrar
-                </button>
+                <div className="relative">
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`px-6 py-4 border rounded-2xl flex items-center gap-2 transition-all font-medium text-sm ${filterStatus !== 'all' ? 'bg-blue-600/10 border-blue-600 text-blue-500' : 'bg-card/50 border-border hover:bg-muted/50'}`}
+                    >
+                        <Filter size={18} /> {filterStatus === 'all' ? 'Filtrar' : filterStatus === 'pagada' ? 'Pagadas' : 'Pendientes y Abonos'}
+                    </button>
+                    {showFilters && (
+                        <div className="absolute right-0 top-full mt-2 w-56 bg-slate-900 rounded-xl shadow-xl border border-border overflow-hidden z-20 font-sans backdrop-blur-xl">
+                            <button onClick={() => { setFilterStatus('all'); setShowFilters(false); }} className="w-full text-left px-4 py-3 hover:bg-slate-800 text-sm border-b border-border text-slate-300">Todas las Facturas</button>
+                            <button onClick={() => { setFilterStatus('pendiente'); setShowFilters(false); }} className="w-full text-left px-4 py-3 hover:bg-slate-800 text-sm border-b border-border text-slate-300">Solo Pendientes y Abonos</button>
+                            <button onClick={() => { setFilterStatus('pagada'); setShowFilters(false); }} className="w-full text-left px-4 py-3 hover:bg-slate-800 text-sm text-slate-300">Solo Pagadas</button>
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="bg-card/30 border border-border rounded-3xl overflow-hidden backdrop-blur-sm">
@@ -290,12 +321,14 @@ export default function FacturasPage() {
                                         <td colSpan={7} className="px-6 py-8"><div className="h-4 bg-muted rounded w-full"></div></td>
                                     </tr>
                                 ))
-                            ) : facturas.length === 0 ? (
+                            ) : filteredFacturas.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground font-sans">No hay facturas registradas.</td>
+                                    <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground font-sans">
+                                        {searchTerm || filterStatus !== 'all' ? 'No se encontraron facturas con estos filtros.' : 'No hay facturas registradas.'}
+                                    </td>
                                 </tr>
                             ) : (
-                                facturas.map((fac) => (
+                                filteredFacturas.map((fac) => (
                                     <tr key={fac.id} className="hover:bg-muted/20 transition-colors group">
                                         <td className="px-6 py-4 font-medium flex items-center gap-2">
                                             {fac.es_electronica && <CreditCard size={14} className="text-blue-400" />}
