@@ -56,6 +56,22 @@ interface Factura {
 }
 
 export default function ClientesPage() {
+    const formatDateLocal = (dateStr?: string, formatStr: string = 'dd/MM/yyyy') => {
+        if (!dateStr) return '';
+        const date = parseLocalDate(dateStr);
+        return format(date, formatStr, { locale: es });
+    };
+
+    const parseLocalDate = (dateStr: string) => {
+        if (!dateStr) return new Date();
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return new Date(dateStr);
+        const y = parseInt(parts[0]);
+        const m = parseInt(parts[1]) - 1;
+        const d = parseInt(parts[2]);
+        return new Date(y, m, d);
+    };
+
     const [clientes, setClientes] = useState<Cliente[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -164,19 +180,17 @@ export default function ClientesPage() {
         if (customStartDate) {
             startDate = customStartDate;
         } else if (cliente.Fecha_Ultimo_Pago) {
-            // Fix: Parse YYYY-MM-DD as local date to avoid timezone shift
-            const [y, m, d] = (cliente.Fecha_Ultimo_Pago as string).split('-').map(Number);
-            startDate = addMonths(new Date(y, m - 1, d), 1);
+            startDate = addMonths(parseLocalDate(cliente.Fecha_Ultimo_Pago), 1);
         } else {
             // Fallback: Buscar la última factura
             const lastInvoice = facturas.length > 0
                 ? facturas.reduce((latest, current) =>
-                    isAfter(new Date(current.fecha_emision), new Date(latest.fecha_emision)) ? current : latest
+                    isAfter(parseLocalDate(current.fecha_emision), parseLocalDate(latest.fecha_emision)) ? current : latest
                 )
                 : null;
 
             if (lastInvoice) {
-                startDate = addMonths(new Date(lastInvoice.fecha_emision), 1);
+                startDate = addMonths(parseLocalDate(lastInvoice.fecha_emision), 1);
             } else {
                 return [];
             }
@@ -241,7 +255,7 @@ export default function ClientesPage() {
                     if (saldo > 0) {
                         totalDeuda += saldo;
                         // Mora check: > 60 days
-                        if (isAfter(startOfToday(), addMonths(new Date(f.fecha_emision), 2))) {
+                        if (isAfter(startOfToday(), addMonths(parseLocalDate(f.fecha_emision), 2))) {
                             tieneMora = true;
                         }
                     }
@@ -417,7 +431,7 @@ export default function ClientesPage() {
         // Inicializar formulario de deuda
         setInvoiceFormData(prev => ({
             ...prev,
-            desde_mes: cliente.Fecha_Ultimo_Pago ? format(startOfMonth(new Date(cliente.Fecha_Ultimo_Pago)), 'yyyy-MM-dd') : '',
+            desde_mes: cliente.Fecha_Ultimo_Pago ? format(startOfMonth(parseLocalDate(cliente.Fecha_Ultimo_Pago)), 'yyyy-MM-dd') : '',
             periodos: [],
             meses_detallados: [],
             meses: 0,
@@ -715,7 +729,7 @@ export default function ClientesPage() {
                                     const periodDate = new Date(anio, meses[mesStr], 1);
 
                                     // Solo actualizar si es posterior a la actual
-                                    const currentLastPaid = selectedCliente.Fecha_Ultimo_Pago ? new Date(selectedCliente.Fecha_Ultimo_Pago) : new Date(0);
+                                    const currentLastPaid = selectedCliente.Fecha_Ultimo_Pago ? parseLocalDate(selectedCliente.Fecha_Ultimo_Pago) : new Date(0);
                                     if (isAfter(periodDate, currentLastPaid)) {
                                         await supabase
                                             .from('CLIENTES')
@@ -1315,7 +1329,7 @@ export default function ClientesPage() {
                                                         </div>
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className="text-sm font-bold text-white">{format(new Date(cobro.fecha_pago), 'dd/MM/yyyy')}</p>
+                                                        <p className="text-sm font-bold text-white">{formatDateLocal(cobro.fecha_pago)}</p>
                                                         <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
                                                             {cobro.metodo_pago}
                                                         </span>
@@ -1812,10 +1826,10 @@ export default function ClientesPage() {
                                         </div>
                                         <div className="bg-white/5 border border-white/5 p-6 rounded-3xl relative overflow-hidden">
                                             <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest mb-1">Deuda Pendiente</p>
-                                            <p className={`text-2xl font-black ${clientDocs.facturas.some(f => f.saldo_pendiente && f.saldo_pendiente > 0 && isAfter(addMonths(new Date(f.fecha_emision), 2), new Date()) === false) ? 'text-red-500' : 'text-yellow-500'}`}>
+                                            <p className={`text-2xl font-black ${clientDocs.facturas.some(f => f.saldo_pendiente && f.saldo_pendiente > 0 && isAfter(addMonths(parseLocalDate(f.fecha_emision), 2), new Date()) === false) ? 'text-red-500' : 'text-yellow-500'}`}>
                                                 ${clientDocs.facturas.reduce((acc, f) => acc + (f.saldo_pendiente || 0), 0).toLocaleString()}
                                             </p>
-                                            {clientDocs.facturas.some(f => f.saldo_pendiente && f.saldo_pendiente > 0 && isAfter(addMonths(new Date(f.fecha_emision), 2), new Date()) === false) && (
+                                            {clientDocs.facturas.some(f => f.saldo_pendiente && f.saldo_pendiente > 0 && isAfter(addMonths(parseLocalDate(f.fecha_emision), 2), new Date()) === false) && (
                                                 <div className="absolute top-2 right-4 px-2 py-0.5 bg-red-500 text-[8px] font-black text-white rounded uppercase animate-pulse">
                                                     Mora {"$>"} 60 Días
                                                 </div>
@@ -1838,7 +1852,7 @@ export default function ClientesPage() {
                                                             </div>
                                                             <div>
                                                                 <p className="font-black text-sm">{fac.numero_factura}</p>
-                                                                <p className="text-[10px] text-muted-foreground uppercase">{format(new Date(fac.fecha_emision), 'dd MMM yyyy', { locale: es })}</p>
+                                                                <p className="text-[10px] text-muted-foreground uppercase">{formatDateLocal(fac.fecha_emision, 'dd MMM yyyy')}</p>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-6">
@@ -1912,7 +1926,7 @@ export default function ClientesPage() {
                                                             </div>
                                                             <div>
                                                                 <p className="font-black text-sm">{cot.numero_cotizacion}</p>
-                                                                <p className="text-[10px] text-muted-foreground uppercase">{format(new Date(cot.fecha_emision), 'dd MMM yyyy', { locale: es })}</p>
+                                                                <p className="text-[10px] text-muted-foreground uppercase">{formatDateLocal(cot.fecha_emision, 'dd MMM yyyy')}</p>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-6">

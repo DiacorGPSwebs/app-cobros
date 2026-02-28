@@ -25,10 +25,8 @@ export default function FacturasPage() {
                     *,
                     CLIENTES (
                         Nombre_Completo,
-                        RUC_Cedula,
                         Telefono,
-                        Email,
-                        Direccion
+                        Correo
                     ),
                     Cotizaciones (
                         items,
@@ -75,7 +73,7 @@ export default function FacturasPage() {
             doc.text('FACTURAR A:', 14, 55);
             doc.setFont('helvetica', 'normal');
             doc.text(fac.CLIENTES?.Nombre_Completo || 'Cliente General', 14, 60);
-            doc.text(fac.CLIENTES?.RUC_Cedula || '', 14, 65);
+            doc.text(fac.CLIENTES?.Telefono || 'Teléfono no disp.', 14, 65);
 
             // Table
             const items = fac.Cotizaciones?.items || [{ description: 'Servicios de Rastreo GPS', quantity: 1, price: fac.monto_subtotal }];
@@ -156,7 +154,7 @@ export default function FacturasPage() {
                                 <div>
                                     <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2">Facturar a</p>
                                     <p className="font-bold text-slate-800">{selectedFactura.CLIENTES?.Nombre_Completo}</p>
-                                    <p className="text-sm text-slate-500">{selectedFactura.CLIENTES?.RUC_Cedula || 'RUC/Cédula no reg.'}</p>
+                                    <p className="text-sm text-slate-500">{selectedFactura.CLIENTES?.Correo || selectedFactura.CLIENTES?.Telefono || 'Contacto no reg.'}</p>
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-2">Estado</p>
