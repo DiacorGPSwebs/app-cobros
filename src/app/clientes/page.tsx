@@ -815,6 +815,32 @@ export default function ClientesPage() {
         }
     };
 
+    const handleMarkUpToDate = async () => {
+        if (!selectedCliente) return;
+        if (!confirm('¿Estás seguro de que quieres marcar a este cliente como Al Día? Esto despejará todos los periodos pendientes de facturar hasta el mes actual.')) return;
+
+        setIsSaving(true);
+        try {
+            const today = new Date();
+            const startOfCurrentMonth = format(today, 'yyyy-MM-01');
+
+            const { error } = await supabase
+                .from('CLIENTES')
+                .update({ Fecha_Ultimo_Pago: startOfCurrentMonth })
+                .eq('id', selectedCliente.id);
+
+            if (error) throw error;
+
+            await fetchClientes();
+            setSelectedCliente({ ...selectedCliente, Fecha_Ultimo_Pago: startOfCurrentMonth });
+            alert('Cliente marcado como Al Día con éxito.');
+        } catch (err: any) {
+            alert('Error al actualizar: ' + err.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const handleDeleteCliente = async () => {
         if (!selectedCliente) return;
         if (!isConfirmingDeleteClient) {
@@ -1935,12 +1961,20 @@ export default function ClientesPage() {
                                             <h3 className="text-xl font-black flex items-center gap-3 tracking-tight">
                                                 <Clock className="text-primary" size={24} /> Estado de Ciclos de Pago
                                             </h3>
-                                            <button
-                                                onClick={() => setShowDocuments(true)}
-                                                className="text-xs font-bold text-primary hover:underline uppercase tracking-widest"
-                                            >
-                                                Ver Facturas
-                                            </button>
+                                            <div className="flex items-center gap-4">
+                                                <button
+                                                    onClick={handleMarkUpToDate}
+                                                    className="text-xs font-bold text-green-500 hover:text-green-400 uppercase tracking-widest border border-green-500/20 px-3 py-1 rounded-lg bg-green-500/5 transition-all"
+                                                >
+                                                    Marcar como Al Día
+                                                </button>
+                                                <button
+                                                    onClick={() => setShowDocuments(true)}
+                                                    className="text-xs font-bold text-primary hover:underline uppercase tracking-widest"
+                                                >
+                                                    Ver Facturas
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="p-8 rounded-[2rem] bg-gradient-to-br from-card to-[#161e2f] border border-white/5 shadow-2xl space-y-6 relative overflow-hidden group">
