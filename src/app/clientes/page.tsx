@@ -164,8 +164,9 @@ export default function ClientesPage() {
         if (customStartDate) {
             startDate = customStartDate;
         } else if (cliente.Fecha_Ultimo_Pago) {
-            // Empezamos el mes siguiente al último pago
-            startDate = addMonths(new Date(cliente.Fecha_Ultimo_Pago), 1);
+            // Fix: Parse YYYY-MM-DD as local date to avoid timezone shift
+            const [y, m, d] = (cliente.Fecha_Ultimo_Pago as string).split('-').map(Number);
+            startDate = addMonths(new Date(y, m - 1, d), 1);
         } else {
             // Fallback: Buscar la última factura
             const lastInvoice = facturas.length > 0
@@ -829,17 +830,21 @@ export default function ClientesPage() {
         setIsSaving(true);
         try {
             const today = new Date();
-            const startOfCurrentMonth = format(today, 'yyyy-MM-01');
+            // Evitar desajustes de zona horaria al guardar
+            const y = today.getFullYear();
+            const m = today.getMonth();
+            const startOfCurrentMonthUTC = new Date(y, m, 1);
+            const startOfCurrentMonthStr = format(startOfCurrentMonthUTC, 'yyyy-MM-01');
 
             const { error } = await supabase
                 .from('CLIENTES')
-                .update({ Fecha_Ultimo_Pago: startOfCurrentMonth })
+                .update({ Fecha_Ultimo_Pago: startOfCurrentMonthStr })
                 .eq('id', selectedCliente.id);
 
             if (error) throw error;
 
             await fetchClientes();
-            setSelectedCliente({ ...selectedCliente, Fecha_Ultimo_Pago: startOfCurrentMonth });
+            setSelectedCliente({ ...selectedCliente, Fecha_Ultimo_Pago: startOfCurrentMonthStr });
             alert('Cliente marcado como Al Día con éxito.');
         } catch (err: any) {
             alert('Error al actualizar: ' + err.message);
@@ -1032,7 +1037,11 @@ export default function ClientesPage() {
                                 {/* Debt Indicator - Implementation */}
                                 <div className="mt-6">
                                     {(() => {
-                                        const lastPaymentDate = cliente.Fecha_Ultimo_Pago ? startOfMonth(new Date(cliente.Fecha_Ultimo_Pago)) : startOfMonth(new Date());
+                                        let lastPaymentDate = startOfMonth(new Date());
+                                        if (cliente.Fecha_Ultimo_Pago) {
+                                            const [y, m, d] = cliente.Fecha_Ultimo_Pago.split('-').map(Number);
+                                            lastPaymentDate = startOfMonth(new Date(y, m - 1, d));
+                                        }
                                         const currentMonth = startOfMonth(new Date());
 
                                         // Calculate months difference
@@ -1339,7 +1348,10 @@ export default function ClientesPage() {
                                                     const label = format(month, 'MMMM yyyy', { locale: es });
                                                     const isoDate = format(month, 'yyyy-MM-dd');
                                                     const lastPaidDate = (invoiceFormData.desde_mes && invoiceFormData.desde_mes !== '')
-                                                        ? startOfMonth(new Date(invoiceFormData.desde_mes))
+                                                        ? (() => {
+                                                            const [y, m, d] = invoiceFormData.desde_mes.split('-').map(Number);
+                                                            return startOfMonth(new Date(y, m - 1, d));
+                                                        })()
                                                         : null;
 
                                                     const isSelected = invoiceFormData.desde_mes === isoDate;
