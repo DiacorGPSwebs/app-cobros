@@ -829,22 +829,18 @@ export default function ClientesPage() {
 
         setIsSaving(true);
         try {
-            const today = new Date();
-            // Evitar desajustes de zona horaria al guardar
-            const y = today.getFullYear();
-            const m = today.getMonth();
-            const startOfCurrentMonthUTC = new Date(y, m, 1);
-            const startOfCurrentMonthStr = format(startOfCurrentMonthUTC, 'yyyy-MM-01');
+            // Establecer la fecha de hoy en formato local YYYY-MM-DD
+            const todayStr = format(new Date(), 'yyyy-MM-dd');
 
             const { error } = await supabase
                 .from('CLIENTES')
-                .update({ Fecha_Ultimo_Pago: startOfCurrentMonthStr })
+                .update({ Fecha_Ultimo_Pago: todayStr })
                 .eq('id', selectedCliente.id);
 
             if (error) throw error;
 
             await fetchClientes();
-            setSelectedCliente({ ...selectedCliente, Fecha_Ultimo_Pago: startOfCurrentMonthStr });
+            setSelectedCliente({ ...selectedCliente, Fecha_Ultimo_Pago: todayStr });
             alert('Cliente marcado como Al Día con éxito.');
         } catch (err: any) {
             alert('Error al actualizar: ' + err.message);
@@ -1023,7 +1019,10 @@ export default function ClientesPage() {
                                         </span>
                                         {cliente.Fecha_Ultimo_Pago && (
                                             <div className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-tighter">
-                                                Último Pago: {format(new Date(cliente.Fecha_Ultimo_Pago), 'dd/MM/yy')}
+                                                Último Pago: {(() => {
+                                                    const [y, m, d] = cliente.Fecha_Ultimo_Pago.split('-').map(Number);
+                                                    return format(new Date(y, m - 1, d), 'dd/MM/yy');
+                                                })()}
                                             </div>
                                         )}
                                         {cliente.Requiere_Factura && (
@@ -1047,11 +1046,20 @@ export default function ClientesPage() {
                                         // Calculate months difference
                                         let monthsOwed = 0;
                                         if (cliente.Fecha_Ultimo_Pago) {
-                                            const intervals = eachMonthOfInterval({
-                                                start: addMonths(lastPaymentDate, 1),
-                                                end: currentMonth
-                                            });
-                                            monthsOwed = intervals.length;
+                                            try {
+                                                const startM = startOfMonth(addMonths(lastPaymentDate, 1));
+                                                const endM = startOfMonth(currentMonth);
+
+                                                if (!isAfter(startM, endM)) {
+                                                    const intervals = eachMonthOfInterval({
+                                                        start: startM,
+                                                        end: endM
+                                                    });
+                                                    monthsOwed = intervals.length;
+                                                }
+                                            } catch (e) {
+                                                monthsOwed = 0;
+                                            }
                                         }
 
                                         const statusLabel = (cliente.total_deuda || 0) === 0
