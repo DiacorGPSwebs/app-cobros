@@ -127,6 +127,7 @@ export default function ClientesPage() {
     const [confirmingDeleteVehiculoId, setConfirmingDeleteVehiculoId] = useState<number | null>(null);
     const [confirmingDeleteInvoiceId, setConfirmingDeleteInvoiceId] = useState<string | null>(null);
     const [confirmingDeleteCotizacionId, setConfirmingDeleteCotizacionId] = useState<string | null>(null);
+    const [confirmingDeleteCobroId, setConfirmingDeleteCobroId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchClientes();
@@ -652,6 +653,49 @@ export default function ClientesPage() {
             alert('Cotización eliminada con éxito');
         } catch (err: any) {
             alert('Error al eliminar cotización: ' + err.message);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteCobro = async (cobroId: string, facturaId?: string) => {
+        if (!selectedCliente) return;
+        setIsSaving(true);
+        try {
+            // 1. Eliminar el cobro de la tabla
+            const { error: dError } = await supabase
+                .from('Cobros')
+                .delete()
+                .eq('id', cobroId);
+
+            if (dError) throw dError;
+
+            // 2. Si estaba vinculado a una factura, recalcular el estado de esa factura en la DB
+            if (facturaId) {
+                // Fetch remaining payments for this invoice
+                const { data: remPagos } = await supabase.from('Cobros').select('monto_pagado').eq('factura_id', facturaId);
+                const totalPagado = (remPagos || []).reduce((acc, p) => acc + p.monto_pagado, 0);
+
+                // Fetch total de la factura
+                const { data: inv } = await supabase.from('Facturas').select('monto_total').eq('id', facturaId).single();
+
+                if (inv) {
+                    const saldo = inv.monto_total - totalPagado;
+                    const nuevoEstado = saldo <= 0 ? 'pagada' : (totalPagado > 0 ? 'abono' : 'pendiente');
+
+                    await supabase
+                        .from('Facturas')
+                        .update({ estado: nuevoEstado })
+                        .eq('id', facturaId);
+                }
+            }
+
+            setConfirmingDeleteCobroId(null);
+            fetchDetails(selectedCliente.id);
+            fetchClientes(); // Update general balances
+            alert('Pago eliminado con éxito');
+        } catch (err: any) {
+            alert('Error al eliminar el pago: ' + err.message);
         } finally {
             setIsSaving(false);
         }
@@ -1328,11 +1372,41 @@ export default function ClientesPage() {
                                                             <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">{cobro.periodo_cubierto}</p>
                                                         </div>
                                                     </div>
-                                                    <div className="text-right">
-                                                        <p className="text-sm font-bold text-white">{formatDateLocal(cobro.fecha_pago)}</p>
-                                                        <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
-                                                            {cobro.metodo_pago}
-                                                        </span>
+                                                    <div className="flex items-center gap-6 text-right">
+                                                        <div>
+                                                            <p className="text-sm font-bold text-white mb-1">{formatDateLocal(cobro.fecha_pago)}</p>
+                                                            <span className="text-[10px] font-black uppercase text-primary bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20">
+                                                                {cobro.metodo_pago}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center">
+                                                            {confirmingDeleteCobroId === cobro.id ? (
+                                                                <div className="flex items-center gap-1 animate-in slide-in-from-right-2 duration-300">
+                                                                    <button
+                                                                        onClick={() => handleDeleteCobro(cobro.id, cobro.factura_id)}
+                                                                        disabled={isSaving}
+                                                                        className="px-3 py-1.5 bg-red-500 text-white text-[9px] font-black uppercase rounded-lg hover:bg-red-600 transition-all flex items-center gap-1"
+                                                                    >
+                                                                        {isSaving ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                                                                        Confirmar
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setConfirmingDeleteCobroId(null)}
+                                                                        className="p-1.5 bg-white/10 text-white rounded-lg hover:bg-white/20 transition-all"
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => setConfirmingDeleteCobroId(cobro.id)}
+                                                                    className="p-2 bg-white/5 rounded-xl text-muted-foreground hover:bg-red-500/10 hover:text-red-500 transition-all"
+                                                                    title="Eliminar Pago"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))
