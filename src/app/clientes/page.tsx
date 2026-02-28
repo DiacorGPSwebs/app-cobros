@@ -185,9 +185,16 @@ export default function ClientesPage() {
 
         // Generar lista de meses desde startDate hasta today
         try {
+            const startM = startOfMonth(startDate);
+            const endM = startOfMonth(today);
+
+            if (isAfter(startM, endM)) {
+                return [];
+            }
+
             const intervals = eachMonthOfInterval({
-                start: startOfMonth(startDate),
-                end: startOfMonth(today)
+                start: startM,
+                end: endM
             });
 
             return intervals.map(date => {
