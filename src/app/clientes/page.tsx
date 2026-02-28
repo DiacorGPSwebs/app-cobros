@@ -52,6 +52,7 @@ interface Factura {
     archivo_url?: string;
     pagos_vincunlados?: Cobro[];
     saldo_pendiente?: number;
+    periodo?: string;
 }
 
 export default function ClientesPage() {
@@ -77,6 +78,7 @@ export default function ClientesPage() {
         monto: 0,
         meses: 1,
         periodos: [] as { label: string, date: Date }[],
+        meses_detallados: [] as { label: string, date: Date, equipos: number, monto: number }[],
         desde_mes: format(subMonths(new Date(), 2), 'yyyy-MM'),
         fecha_emision: format(new Date(), 'yyyy-MM-dd'),
         fecha_vencimiento: format(addMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -409,6 +411,7 @@ export default function ClientesPage() {
             ...prev,
             desde_mes: cliente.Fecha_Ultimo_Pago ? format(startOfMonth(new Date(cliente.Fecha_Ultimo_Pago)), 'yyyy-MM-dd') : '',
             periodos: [],
+            meses_detallados: [],
             meses: 0,
             monto: 0
         }));
@@ -478,25 +481,47 @@ export default function ClientesPage() {
     };
 
     const handleSaveInvoice = async () => {
-        if (!selectedCliente || !invoiceFormData.numero || !invoiceFormData.monto) {
-            alert('Por favor completa los campos obligatorios');
+        if (!selectedCliente || (invoiceFormData.meses_detallados.length === 0 && invoiceFormData.monto <= 0)) {
+            alert('Por favor selecciona un periodo de deuda válido');
             return;
         }
 
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('Facturas')
-                .insert([{
-                    cliente_id: selectedCliente.id,
-                    numero_factura: invoiceFormData.numero,
-                    monto_total: invoiceFormData.monto,
-                    fecha_emision: invoiceFormData.fecha_emision,
-                    fecha_vencimiento: invoiceFormData.fecha_vencimiento,
-                    estado: 'pendiente'
-                }]);
-
-            if (error) throw error;
+            // 1. GENERAR FACTURAS INDIVIDUALES POR MES
+            if (invoiceFormData.meses_detallados.length > 0) {
+                for (const item of invoiceFormData.meses_detallados) {
+                    const nextNum = await getNextInvoiceNumber();
+                    const { error: fError } = await supabase
+                        .from('Facturas')
+                        .insert([{
+                            cliente_id: selectedCliente.id,
+                            numero_factura: `${nextNum} (${item.label})`,
+                            monto_total: item.monto,
+                            monto_subtotal: item.monto,
+                            fecha_emision: invoiceFormData.fecha_emision,
+                            fecha_vencimiento: invoiceFormData.fecha_vencimiento,
+                            periodo: item.label,
+                            estado: 'pendiente',
+                            es_electronica: invoiceFormData.es_electronica
+                        }]);
+                    if (fError) throw fError;
+                }
+            } else {
+                const nextNum = await getNextInvoiceNumber();
+                const { error: fError } = await supabase
+                    .from('Facturas')
+                    .insert([{
+                        cliente_id: selectedCliente.id,
+                        numero_factura: invoiceFormData.numero || nextNum,
+                        monto_total: invoiceFormData.monto,
+                        monto_subtotal: invoiceFormData.monto,
+                        fecha_emision: invoiceFormData.fecha_emision,
+                        fecha_vencimiento: invoiceFormData.fecha_vencimiento,
+                        estado: 'pendiente'
+                    }]);
+                if (fError) throw fError;
+            }
 
             // 2. ACTUALIZAR LA FECHA DE ÚLTIMO PAGO EN CLIENTE
             if (invoiceFormData.desde_mes) {
@@ -513,6 +538,7 @@ export default function ClientesPage() {
                 monto: 0,
                 meses: 1,
                 periodos: [],
+                meses_detallados: [],
                 desde_mes: format(new Date(), 'yyyy-MM'),
                 fecha_emision: format(new Date(), 'yyyy-MM-dd'),
                 fecha_vencimiento: format(addMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -524,7 +550,7 @@ export default function ClientesPage() {
             fetchClientes();
         } catch (err: any) {
             console.error('Error saving invoice:', err.message);
-            alert('Error al guardar la factura: ' + err.message);
+            alert('Error al guardar: ' + err.message);
         } finally {
             setIsSaving(false);
         }
@@ -1273,13 +1299,21 @@ export default function ClientesPage() {
                                                                     date: d
                                                                 }));
 
-                                                                setInvoiceFormData({
-                                                                    ...invoiceFormData,
+                                                                const count = owedPeriods.length;
+                                                                const detailed = owedPeriods.map(p => ({
+                                                                    ...p,
+                                                                    equipos: selectedCliente?.Cantidad_Vehiculo || 0,
+                                                                    monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0)
+                                                                }));
+
+                                                                setInvoiceFormData(prev => ({
+                                                                    ...prev,
                                                                     desde_mes: isoDate,
                                                                     periodos: owedPeriods,
-                                                                    meses: owedPeriods.length,
-                                                                    monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * owedPeriods.length
-                                                                });
+                                                                    meses_detallados: detailed,
+                                                                    meses: count,
+                                                                    monto: detailed.reduce((sum, m) => sum + m.monto, 0)
+                                                                }));
                                                             }}
                                                             className={`flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300 font-bold uppercase text-[10px] tracking-tighter text-center h-24 ${statusClasses}`}
                                                         >
@@ -1293,61 +1327,61 @@ export default function ClientesPage() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Número de Factura (Automático)</label>
-                                            <input
-                                                type="text"
-                                                readOnly
-                                                value={invoiceFormData.numero}
-                                                className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white font-bold opacity-70"
-                                            />
-                                        </div>
-                                        <div className="space-y-3">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Periodos Detectados (Deuda)</label>
-                                            <div className="flex flex-wrap gap-2">
-                                                {invoiceFormData.periodos.map((p, i) => (
-                                                    <span key={i} className="px-3 py-1.5 bg-primary/20 text-primary text-[10px] font-black uppercase rounded-lg border border-primary/30">
-                                                        {p.label}
-                                                    </span>
-                                                ))}
-                                                {invoiceFormData.periodos.length === 0 && (
-                                                    <span className="text-xs text-muted-foreground italic">Seleccione un mes para comenzar el cálculo.</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Resumen de Cálculo Automático */}
-                                    <div className="p-8 rounded-[2.5rem] bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-white/10 space-y-4">
-                                        <div className="flex justify-between items-center">
-                                            <div className="space-y-1">
-                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cálculo de Deuda Inteligente</p>
-                                                <div className="flex items-center gap-3 text-white">
-                                                    <span className="text-xl font-bold">{selectedCliente?.Cantidad_Vehiculo || 0} Equipos</span>
-                                                    <X size={14} className="text-muted-foreground" />
-                                                    <span className="text-xl font-bold">${selectedCliente?.Tarifa || 0}</span>
-                                                    <X size={14} className="text-muted-foreground" />
-                                                    <span className="text-xl font-bold">{invoiceFormData.meses} {invoiceFormData.meses === 1 ? 'Mes' : 'Meses'}</span>
+                                    {/* PASO 2: DESGLOSE POR MES */}
+                                    {invoiceFormData.meses_detallados.length > 0 && (
+                                        <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/5 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Paso 2: Detalle Mensual</p>
+                                                    <h4 className="text-xl font-black text-white">Ajuste de Equipos por Mes</h4>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Total Deuda</p>
+                                                    <p className="text-3xl font-black text-white">${invoiceFormData.monto.toLocaleString()}</p>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Monto Total</p>
-                                                <p className="text-4xl font-black text-white">${invoiceFormData.monto.toLocaleString()}</p>
+
+                                            <div className="space-y-3">
+                                                {invoiceFormData.meses_detallados.map((item, idx) => (
+                                                    <div key={idx} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all group">
+                                                        <div className="flex-1">
+                                                            <p className="text-xs font-black text-white uppercase tracking-widest">{item.label}</p>
+                                                            <p className="text-[10px] text-muted-foreground font-bold italic">TARIFA: ${selectedCliente?.Tarifa} / unidad</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="text-right">
+                                                                <p className="text-[10px] font-black text-muted-foreground uppercase mb-1">Equipos</p>
+                                                                <input
+                                                                    type="number"
+                                                                    value={item.equipos}
+                                                                    onChange={(e) => {
+                                                                        const val = Number(e.target.value);
+                                                                        const newDetailed = [...invoiceFormData.meses_detallados];
+                                                                        newDetailed[idx] = {
+                                                                            ...item,
+                                                                            equipos: val,
+                                                                            monto: val * (selectedCliente?.Tarifa || 0)
+                                                                        };
+                                                                        setInvoiceFormData(prev => ({
+                                                                            ...prev,
+                                                                            meses_detallados: newDetailed,
+                                                                            monto: newDetailed.reduce((sum, m) => sum + m.monto, 0)
+                                                                        }));
+                                                                    }}
+                                                                    className="w-20 bg-white/10 border border-white/10 rounded-xl p-2 text-center text-white font-black text-sm outline-none focus:ring-2 focus:ring-primary/40 transition-all"
+                                                                />
+                                                            </div>
+                                                            <X size={12} className="text-muted-foreground mt-4" />
+                                                            <div className="text-right min-w-[80px]">
+                                                                <p className="text-[10px] font-black text-muted-foreground uppercase mb-1">Subtotal</p>
+                                                                <p className="text-sm font-black text-white">${item.monto.toLocaleString()}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                        <div className="pt-4 border-t border-white/5 flex gap-4">
-                                            <div className="flex-1 space-y-1">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Monto Final (Editable)</label>
-                                                <input
-                                                    type="number"
-                                                    value={invoiceFormData.monto}
-                                                    onChange={(e) => setInvoiceFormData({ ...invoiceFormData, monto: Number(e.target.value) })}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none focus:ring-2 focus:ring-primary/40 text-white font-bold"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
+                                    )}
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-3">
@@ -1388,11 +1422,11 @@ export default function ClientesPage() {
 
                                     <button
                                         onClick={handleSaveInvoice}
-                                        disabled={isSaving || invoiceFormData.periodos.length === 0}
+                                        disabled={isSaving || invoiceFormData.meses_detallados.length === 0}
                                         className="w-full premium-gradient py-6 rounded-[2rem] font-black text-xl shadow-2xl shadow-primary/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-4 disabled:opacity-50 disabled:hover:scale-100"
                                     >
                                         {isSaving ? <Loader2 className="animate-spin" size={24} /> : <Save size={24} />}
-                                        REGISTRAR DEUDA
+                                        GENERAR {invoiceFormData.meses_detallados.length} FACTURAS INDIVIDUALES
                                     </button>
                                 </div>
                             ) : isEditing || isCreating ? (
@@ -2006,11 +2040,11 @@ export default function ClientesPage() {
                                     </button>
                                     <button
                                         onClick={handleSaveInvoice}
-                                        disabled={isSaving}
+                                        disabled={isSaving || invoiceFormData.meses_detallados.length === 0}
                                         className="flex-1 premium-gradient py-5 rounded-2xl font-black text-white shadow-2xl shadow-blue-500/40 active:scale-95 transition-all flex items-center justify-center gap-3 text-sm uppercase tracking-widest disabled:opacity-50"
                                     >
                                         {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-                                        Guardar Factura
+                                        GENERAR {invoiceFormData.meses_detallados.length} FACTURAS
                                     </button>
                                 </>
                             ) : showHistory || showDocuments ? (
@@ -2114,8 +2148,9 @@ export default function ClientesPage() {
                             )}
                         </div>
                     </div>
-                </div>
-            )}
+                </div >
+            )
+            }
 
             {/* Estilos scrollbar */}
             <style jsx global>{`
@@ -2141,6 +2176,6 @@ export default function ClientesPage() {
           padding: 10px;
         }
       `}</style>
-        </div>
+        </div >
     );
 }
