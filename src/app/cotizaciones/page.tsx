@@ -32,6 +32,7 @@ export default function CotizacionesPage() {
     // Form State
     const [selectedCliente, setSelectedCliente] = useState<{ id: number, nombre: string } | null>(null);
     const [prospectName, setProspectName] = useState('');
+    const [estado, setEstado] = useState('borrador');
     const [items, setItems] = useState<QuoteItem[]>([
         { id: Math.random().toString(), description: '', quantity: 1, price: 0, hasItbms: true }
     ]);
@@ -172,7 +173,7 @@ export default function CotizacionesPage() {
                 monto_subtotal: subtotal,
                 monto_itbms: itbms,
                 monto_total: total,
-                estado: 'borrador',
+                estado: estado,
                 caracteristicas_equipo: equipoFeatures,
                 caracteristicas_servicio: servicioFeatures
             };
@@ -215,6 +216,7 @@ export default function CotizacionesPage() {
         })));
         setEquipoFeatures(cot.caracteristicas_equipo?.length > 0 ? cot.caracteristicas_equipo : defaultEquipoFeatures);
         setServicioFeatures(cot.caracteristicas_servicio?.length > 0 ? cot.caracteristicas_servicio : defaultServicioFeatures);
+        setEstado(cot.estado || 'borrador');
         setIsModalOpen(true);
     };
 
@@ -353,6 +355,7 @@ export default function CotizacionesPage() {
         setClientSearch('');
         setIsEditing(false);
         setEditingId(null);
+        setEstado('borrador');
     };
 
     const totals = calculateTotals();
@@ -538,7 +541,7 @@ export default function CotizacionesPage() {
                                     <User size={14} /> Información del Cliente
                                 </h3>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="relative">
                                         <label className="text-xs text-muted-foreground ml-1 mb-1.5 block font-bold uppercase tracking-widest">Buscar Cliente Existente</label>
                                         <div className="relative">
@@ -595,6 +598,23 @@ export default function CotizacionesPage() {
                                             disabled={!!selectedCliente}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all disabled:opacity-50 font-sans"
                                         />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-muted-foreground ml-1 mb-1.5 block font-bold uppercase tracking-widest">Estado</label>
+                                        <select
+                                            value={estado}
+                                            onChange={(e) => setEstado(e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-sm focus:ring-2 focus:ring-primary/20 outline-none transition-all font-sans appearance-none"
+                                        >
+                                            <option value="borrador" className="bg-slate-900">Borrador</option>
+                                            <option value="enviada" className="bg-slate-900">Enviada</option>
+                                            <option value="aceptada" className="bg-slate-900 text-green-500">Aceptada</option>
+                                            <option value="rechazada" className="bg-slate-900 text-red-500">Rechazada</option>
+                                            {cotizaciones.find(c => c.id === editingId)?.estado === 'facturada' && (
+                                                <option value="facturada" className="bg-slate-900 text-blue-500">Facturada</option>
+                                            )}
+                                        </select>
                                     </div>
                                 </div>
                             </div>
