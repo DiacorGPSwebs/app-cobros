@@ -15,6 +15,7 @@ export default function FacturasPage() {
     const [showFilters, setShowFilters] = useState(false);
     const [selectedFactura, setSelectedFactura] = useState<any>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     // PDF Ref
     const printRef = useRef<HTMLDivElement>(null);
@@ -22,6 +23,20 @@ export default function FacturasPage() {
     useEffect(() => {
         fetchFacturas();
     }, []);
+
+    useEffect(() => {
+        if (isGeneratingPdf && selectedFactura && printRef.current) {
+            const timer = setTimeout(() => {
+                handleDownloadPdf(selectedFactura).then(() => {
+                    setIsGeneratingPdf(false);
+                    if (!isPreviewOpen) {
+                        setSelectedFactura(null);
+                    }
+                });
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [isGeneratingPdf, selectedFactura, isPreviewOpen]);
 
     const fetchFacturas = async () => {
         try {
@@ -53,8 +68,12 @@ export default function FacturasPage() {
     // PDF HELPER (DOM Capturing using html2canvas)
     async function handleDownloadPdf(fac: any) {
         try {
-            if (!fac || !printRef.current) {
-                alert('Debe abrir la previsualización para generar el PDF de forma idéntica.');
+            if (!fac) return;
+
+            if (!printRef.current) {
+                // Background hidden render mode
+                setSelectedFactura(fac);
+                setIsGeneratingPdf(true);
                 return;
             }
 
@@ -108,11 +127,12 @@ export default function FacturasPage() {
 
     // MODAL Component
     function PreviewModal() {
-        if (!isPreviewOpen || !selectedFactura) return null;
+        if (!isPreviewOpen && !isGeneratingPdf) return null;
+        if (!selectedFactura) return null;
 
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                <div className="bg-white text-slate-900 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col slide-in-from-bottom-8 duration-500 font-sans">
+            <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isGeneratingPdf ? 'opacity-0 pointer-events-none' : 'bg-black/60 backdrop-blur-sm animate-in fade-in duration-300'}`}>
+                <div className={`bg-white text-slate-900 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col font-sans ${isGeneratingPdf ? '' : 'slide-in-from-bottom-8 duration-500'}`}>
                     {/* Header Modal */}
                     <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                         <h2 className="font-bold text-slate-700">Previsualización de Factura</h2>

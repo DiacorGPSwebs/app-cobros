@@ -21,6 +21,7 @@ export default function CotizacionesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [selectedCotizacion, setSelectedCotizacion] = useState<any>(null);
 
     // Modal State
@@ -67,6 +68,22 @@ export default function CotizacionesPage() {
     useEffect(() => {
         fetchCotizaciones();
     }, []);
+
+    useEffect(() => {
+        if (isGeneratingPdf && selectedCotizacion && printRef.current) {
+            // Wait slightly for DOM to paint completely before capturing
+            const timer = setTimeout(() => {
+                handleDownloadPdf(selectedCotizacion).then(() => {
+                    setIsGeneratingPdf(false);
+                    // only clear if they didn't have it open before
+                    if (!isPreviewOpen) {
+                        setSelectedCotizacion(null);
+                    }
+                });
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [isGeneratingPdf, selectedCotizacion, isPreviewOpen]);
 
     const fetchCotizaciones = async () => {
         try {
@@ -224,8 +241,12 @@ export default function CotizacionesPage() {
 
     const handleDownloadPdf = async (cot: any) => {
         try {
-            if (!cot || !printRef.current) {
-                alert('La previsualización debe estar abierta para generar el PDF.');
+            if (!cot) return;
+
+            if (!printRef.current) {
+                // Background hidden render mode
+                setSelectedCotizacion(cot);
+                setIsGeneratingPdf(true);
                 return;
             }
 
@@ -811,9 +832,9 @@ export default function CotizacionesPage() {
             )}
 
             {/* PREVIEW MODAL */}
-            {isPreviewOpen && selectedCotizacion && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white text-slate-900 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col slide-in-from-bottom-8 duration-500 font-sans">
+            {(isPreviewOpen || isGeneratingPdf) && selectedCotizacion && (
+                <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 ${isGeneratingPdf ? 'opacity-0 pointer-events-none' : 'bg-black/60 backdrop-blur-sm animate-in fade-in duration-300'}`}>
+                    <div className={`bg-white text-slate-900 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col font-sans ${isGeneratingPdf ? '' : 'slide-in-from-bottom-8 duration-500'}`}>
                         {/* Header Modal */}
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                             <h2 className="font-bold text-slate-700">Previsualización de Cotización</h2>
