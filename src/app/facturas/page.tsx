@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Search, Receipt, Download, Filter, MoreVertical, Eye, CreditCard, Clock, AlertCircle, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import html2canvas from 'html2canvas';
 
 export default function FacturasPage() {
     const [facturas, setFacturas] = useState<any[]>([]);
@@ -14,6 +15,9 @@ export default function FacturasPage() {
     const [showFilters, setShowFilters] = useState(false);
     const [selectedFactura, setSelectedFactura] = useState<any>(null);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+    // PDF Ref
+    const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetchFacturas();
@@ -46,76 +50,58 @@ export default function FacturasPage() {
         }
     };
 
-    // PDF HELPER (Robust Method)
+    // PDF HELPER (DOM Capturing using html2canvas)
     async function handleDownloadPdf(fac: any) {
         try {
-            const jsPDF = (await import('jspdf')).default;
-            const autoTable = (await import('jspdf-autotable')).default;
-            const doc = new jsPDF();
-            const date = format(new Date(fac.fecha_emision), 'dd/MM/yyyy');
+            if (!fac || !printRef.current) {
+                alert('Debe abrir la previsualización para generar el PDF de forma idéntica.');
+                return;
+            }
 
-            // Header
-            doc.setFillColor(37, 99, 235);
-            doc.rect(0, 0, 210, 40, 'F');
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(24);
-            doc.setFont('helvetica', 'bold');
-            doc.text('FACTURA', 14, 25);
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            doc.text(`Número: ${fac.numero_factura}`, 14, 33);
-            doc.text(`Fecha: ${date}`, 14, 37);
-            doc.setFontSize(22);
-            doc.text('DIACOR GPS', 140, 28);
+            const element = printRef.current;
+            const originalWidth = element.style.width;
+            element.style.width = '800px';
 
-            // Client
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            doc.text('FACTURAR A:', 14, 55);
-            doc.setFont('helvetica', 'normal');
-            doc.text(fac.CLIENTES?.Nombre_Completo || 'Cliente General', 14, 60);
-            doc.text(fac.CLIENTES?.Telefono || 'Teléfono no disp.', 14, 65);
-
-            // Table
-            const items = fac.Cotizaciones?.items || [{ description: 'Servicios de Rastreo GPS', quantity: 1, price: fac.monto_subtotal }];
-            const tableBody = items.map((item: any) => [
-                item.description,
-                item.quantity,
-                `$${item.price.toFixed(2)}`,
-                `$${(item.quantity * item.price).toFixed(2)}`
-            ]);
-
-            autoTable(doc, {
-                startY: 75,
-                head: [['Descripción', 'Cant.', 'Precio', 'Total']],
-                body: tableBody,
-                headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255] }
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
             });
 
-            const finalY = (doc as any).lastAutoTable.finalY + 10;
-            doc.text('Subtotal:', 140, finalY);
-            doc.text(`$${fac.monto_subtotal.toFixed(2)}`, 190, finalY, { align: 'right' });
-            doc.text('ITBMS (7%):', 140, finalY + 7);
-            doc.text(`$${fac.monto_itbms.toFixed(2)}`, 190, finalY + 7, { align: 'right' });
-            doc.setFont('helvetica', 'bold');
-            doc.text('TOTAL:', 140, finalY + 14);
-            doc.text(`$${fac.monto_total.toFixed(2)}`, 190, finalY + 14, { align: 'right' });
+            element.style.width = originalWidth;
+
+            const jsPDF = (await import('jspdf')).default;
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
             const fileName = `Factura_${fac.numero_factura}.pdf`;
-            const pdfBlob = doc.output('blob');
+            const pdfBlob = pdf.output('blob');
             const url = window.URL.createObjectURL(new Blob([pdfBlob], { type: 'application/octet-stream' }));
+
             const a = document.createElement('a');
             a.style.display = 'none';
-            a.href = url;
+            a.href = url.replace("application/pdf", "application/octet-stream");
             a.download = fileName;
+
             document.body.appendChild(a);
             a.click();
+
             setTimeout(() => {
                 document.body.removeChild(a);
                 window.URL.revokeObjectURL(url);
             }, 100);
         } catch (err: any) {
+            console.error('Error generando PDF:', err);
             alert('Error al generar PDF: ' + err.message);
         }
     }
@@ -135,9 +121,9 @@ export default function FacturasPage() {
                         </button>
                     </div>
 
-                    {/* Invoice Content */}
-                    <div className="flex-1 overflow-y-auto p-8 md:p-12 bg-white">
-                        <div className="max-w-2xl mx-auto space-y-8">
+                    {/* Invoice Content mapped to Ref for Canvas capture */}
+                    <div ref={printRef} className="flex-1 overflow-y-auto p-8 md:p-12 bg-white max-w-2xl mx-auto w-[800px] shrink-0">
+                        <div className="space-y-8 h-full">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <h3 className="text-3xl font-black text-blue-600 tracking-tighter">DIACOR GPS</h3>

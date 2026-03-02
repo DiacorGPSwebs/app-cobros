@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Plus, Search, FileText, Download, Trash2, Edit3, X, Save, Loader2, Filter, User, Calculator, Receipt, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import html2canvas from 'html2canvas';
 
 interface QuoteItem {
     id: string;
@@ -60,6 +60,9 @@ export default function CotizacionesPage() {
     ];
     const [equipoFeatures, setEquipoFeatures] = useState<string[]>(defaultEquipoFeatures);
     const [servicioFeatures, setServicioFeatures] = useState<string[]>(defaultServicioFeatures);
+
+    // PDF Ref
+    const printRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetchCotizaciones();
@@ -219,173 +222,61 @@ export default function CotizacionesPage() {
         }
     };
 
-    const handleDownloadPdf = (cot: any) => {
+    const handleDownloadPdf = async (cot: any) => {
         try {
-            if (!cot || !cot.items) {
-                alert('No hay datos suficientes para generar el PDF.');
+            if (!cot || !printRef.current) {
+                alert('La previsualización debe estar abierta para generar el PDF.');
                 return;
             }
 
-            const doc = new jsPDF();
-            const clientName = cot.CLIENTES?.Nombre_Completo || cot.nombre_prospecto || 'Cliente General';
-            const date = cot.fecha_emision ? format(new Date(cot.fecha_emision), 'dd/MM/yyyy') : format(new Date(), 'dd/MM/yyyy');
-            const quoteNumber = cot.numero_cotizacion || 'S/N';
+            const element = printRef.current;
 
-            // Styles
-            const primaryColor = [37, 99, 235]; // #2563eb
+            // Add a temporary class to ensure fixed width for rendering
+            const originalWidth = element.style.width;
+            element.style.width = '800px';
 
-            // Header
-            doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-            doc.rect(0, 0, 210, 40, 'F');
-
-            doc.setTextColor(255, 255, 255);
-            doc.setFontSize(24);
-            doc.setFont('helvetica', 'bold');
-            doc.text('COTIZACIÓN', 14, 25);
-
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            doc.text(`Número: ${quoteNumber}`, 14, 33);
-            doc.text(`Fecha: ${date}`, 14, 37);
-
-            // Company Name
-            doc.setFontSize(22);
-            doc.text('DIACOR GPS', 140, 28);
-
-            // Client Info
-            doc.setTextColor(0, 0, 0);
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            doc.text('PROPUESTA PARA:', 14, 55);
-
-            doc.setFont('helvetica', 'normal');
-            doc.text(clientName, 14, 60);
-            doc.text('Panamá, Rep. de Panamá', 14, 65);
-
-            // Prepare Table Data
-            const tableBody = cot.items.map((item: any) => [
-                item.description || 'Sin descripción',
-                item.quantity || 0,
-                `$${parseFloat((item.price || 0).toString()).toFixed(2)}`,
-                item.hasItbms ? '7%' : '0%',
-                `$${((item.quantity || 0) * (item.price || 0)).toFixed(2)}`
-            ]);
-
-            // Table
-            autoTable(doc, {
-                startY: 75,
-                head: [['Descripción', 'Cant.', 'Precio Unit.', 'ITBMS', 'Subtotal']],
-                body: tableBody,
-                headStyles: { fillColor: primaryColor as any, textColor: [255, 255, 255], fontStyle: 'bold' },
-                alternateRowStyles: { fillColor: [245, 247, 250] },
-                margin: { left: 14, right: 14 },
-                theme: 'striped'
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
             });
 
-            // Features (After Table)
-            const lastTable = (doc as any).lastAutoTable;
-            const finalY = lastTable ? lastTable.finalY + 10 : 85;
-            let currentY = lastTable ? lastTable.finalY + 15 : 85;
+            // Restore original width
+            element.style.width = originalWidth;
 
-            const eqFeatures = cot.caracteristicas_equipo || [];
-            const svFeatures = cot.caracteristicas_servicio || [];
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
 
-            if (eqFeatures.length > 0 || svFeatures.length > 0) {
-                if (currentY > 230) {
-                    doc.addPage();
-                    currentY = 20;
-                }
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-                doc.setFontSize(9);
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
-                if (eqFeatures.length > 0) {
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-                    doc.text('EQUIPO GPS INCLUYE:', 14, currentY);
-
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(80, 80, 80);
-                    let yFeature = currentY + 6;
-                    eqFeatures.forEach((feat: string) => {
-                        if (yFeature > 280) { doc.addPage(); yFeature = 20; }
-                        doc.text(`\u2022 ${feat}`, 14, yFeature);
-                        yFeature += 5;
-                    });
-                }
-
-                if (svFeatures.length > 0) {
-                    doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-                    doc.text('SERVICIO MENSUAL INCLUYE:', 105, currentY);
-
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(80, 80, 80);
-                    let yFeature = currentY + 6;
-                    svFeatures.forEach((feat: string) => {
-                        if (yFeature > 280) { doc.addPage(); yFeature = 20; }
-                        doc.text(`\u2022 ${feat}`, 105, yFeature);
-                        yFeature += 5;
-                    });
-                }
-
-                currentY += Math.max(eqFeatures.length * 5, svFeatures.length * 5) + 15;
-            } else {
-                currentY = finalY;
-            }
-
-            // Check if we need a new page for totals
-            if (currentY > 250) {
-                doc.addPage();
-                currentY = 20;
-            }
-
-            doc.setTextColor(0, 0, 0);
-
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text('Subtotal:', 140, currentY);
-            doc.text(`$${(cot.monto_subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, currentY, { align: 'right' });
-
-            doc.text('ITBMS (7%):', 140, currentY + 7);
-            doc.text(`$${(cot.monto_itbms || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, currentY + 7, { align: 'right' });
-
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(12);
-            doc.text('TOTAL FINAL:', 140, currentY + 15);
-            doc.text(`$${(cot.monto_total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 190, currentY + 15, { align: 'right' });
-
-            // Footer
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'italic');
-            doc.setTextColor(100, 100, 100);
-            doc.text('Gracias por su confianza. Esta cotización tiene una validez de 15 días.', 105, 285, { align: 'center' });
-
-            // Final check on filename
             const safeNumber = (cot.numero_cotizacion || 'S_N').replace(/[^a-z0-9]/gi, '_');
             const fileName = `Cotizacion_${safeNumber}.pdf`;
 
             // FORCE DOWNLOAD STRATEGY
-            // Using octet-stream to tell the browser "this is a file, don't try to open it"
-            const pdfBlob = doc.output('blob');
-            const url = window.URL.createObjectURL(new Blob([pdfBlob], { type: 'application/octet-stream' }));
-
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = fileName;
-
-            document.body.appendChild(a);
-            a.click();
-
+            const blob = pdf.output('blob');
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url.replace("application/pdf", "application/octet-stream");
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
             setTimeout(() => {
-                document.body.removeChild(a);
+                document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
             }, 100);
 
             console.log("Descarga forzada iniciada para:", fileName);
         } catch (error: any) {
-            console.error('Error al generar PDF:', error);
-            alert('Error al generar el PDF: ' + error.message);
+            console.error('Error generando PDF:', error);
+            alert('Error al generar el documento PDF.');
         }
     };
 
@@ -931,9 +822,9 @@ export default function CotizacionesPage() {
                             </button>
                         </div>
 
-                        {/* Content */}
-                        <div className="flex-1 overflow-y-auto p-8 md:p-12 bg-white text-left">
-                            <div className="max-w-2xl mx-auto space-y-8">
+                        {/* Content mapped to Ref for Canvas capture */}
+                        <div ref={printRef} className="flex-1 overflow-y-auto p-8 md:p-12 bg-white text-left max-w-2xl mx-auto w-[800px] shrink-0">
+                            <div className="space-y-8 h-full">
                                 {/* Quote Header */}
                                 <div className="flex justify-between items-start">
                                     <div>
