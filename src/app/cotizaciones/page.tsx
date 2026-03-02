@@ -5,8 +5,6 @@ import { supabase } from '@/lib/supabase';
 import { Plus, Search, FileText, Download, Trash2, Edit3, X, Save, Loader2, Filter, User, Calculator, Receipt, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface QuoteItem {
     id: string;
@@ -256,7 +254,8 @@ export default function CotizacionesPage() {
             const originalWidth = element.style.width;
             element.style.width = '800px';
 
-            const canvas = await html2canvas(element, {
+            const html2canvasModule = (await import('html2canvas')).default;
+            const canvas = await html2canvasModule(element, {
                 scale: 2,
                 useCORS: true,
                 logging: false,
@@ -267,7 +266,9 @@ export default function CotizacionesPage() {
             element.style.width = originalWidth;
 
             const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
+
+            const jsPDFModule = (await import('jspdf')).default;
+            const pdf = new jsPDFModule({
                 orientation: 'portrait',
                 unit: 'mm',
                 format: 'a4'
@@ -297,7 +298,7 @@ export default function CotizacionesPage() {
             console.log("Descarga forzada iniciada para:", fileName);
         } catch (error: any) {
             console.error('Error generando PDF:', error);
-            alert('Error al generar el documento PDF.');
+            alert('Error al generar el documento PDF: ' + (error?.message || error));
         }
     };
 

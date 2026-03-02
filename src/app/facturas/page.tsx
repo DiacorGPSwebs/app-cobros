@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 import { Search, Receipt, Download, Filter, MoreVertical, Eye, CreditCard, Clock, AlertCircle, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import html2canvas from 'html2canvas';
 
 export default function FacturasPage() {
     const [facturas, setFacturas] = useState<any[]>([]);
@@ -81,7 +80,9 @@ export default function FacturasPage() {
             const originalWidth = element.style.width;
             element.style.width = '800px';
 
-            const canvas = await html2canvas(element, {
+            const html2canvasModule = (await import('html2canvas')).default;
+
+            const canvas = await html2canvasModule(element, {
                 scale: 2,
                 useCORS: true,
                 logging: false,
@@ -121,7 +122,7 @@ export default function FacturasPage() {
             }, 100);
         } catch (err: any) {
             console.error('Error generando PDF:', err);
-            alert('Error al generar PDF: ' + err.message);
+            alert('Error al generar PDF: ' + (err?.message || err));
         }
     }
 
