@@ -80,56 +80,13 @@ export default function FacturasPage() {
             const originalWidth = element.style.width;
             element.style.width = '800px';
 
-            const html2canvasModule = (await import('html2canvas')).default;
-
-            const canvas = await html2canvasModule(element, {
-                scale: 2,
-                useCORS: true,
-                logging: false,
+            const htmlToImage = await import('html-to-image');
+            const dataUrl = await htmlToImage.toPng(element, {
+                pixelRatio: 2,
                 backgroundColor: '#ffffff',
-                onclone: (documentClone) => {
-                    const elements = documentClone.querySelectorAll('*');
-                    elements.forEach((el) => {
-                        const HTMLElement = el as HTMLElement;
-                        const style = window.getComputedStyle(HTMLElement);
-
-                        // Fix for Tailwind CSS v4 lab() / oklch() colors not supported by html2canvas
-                        const propsToCheck = ['color', 'backgroundColor', 'borderColor', 'textDecorationColor', 'fill', 'stroke'];
-
-                        propsToCheck.forEach(prop => {
-                            const val = style.getPropertyValue(prop);
-                            if (val && (val.includes('lab(') || val.includes('oklch(') || val.includes('color('))) {
-                                // Default fallbacks based on visual hierarchy
-                                if (prop === 'backgroundColor') {
-                                    if (HTMLElement.classList.contains('bg-blue-600') || HTMLElement.classList.contains('bg-primary')) {
-                                        HTMLElement.style[prop as any] = 'rgb(37, 99, 235)';
-                                    } else if (HTMLElement.classList.contains('bg-slate-50')) {
-                                        HTMLElement.style[prop as any] = 'rgb(248, 250, 252)';
-                                    } else if (HTMLElement.classList.contains('bg-green-100')) {
-                                        HTMLElement.style[prop as any] = 'rgb(220, 252, 231)';
-                                    } else if (HTMLElement.classList.contains('bg-yellow-100')) {
-                                        HTMLElement.style[prop as any] = 'rgb(254, 249, 195)';
-                                    } else {
-                                        HTMLElement.style[prop as any] = 'rgb(255, 255, 255)';
-                                    }
-                                } else if (prop === 'color') {
-                                    if (HTMLElement.classList.contains('text-blue-600') || HTMLElement.classList.contains('text-primary')) {
-                                        HTMLElement.style[prop as any] = 'rgb(37, 99, 235)';
-                                    } else if (HTMLElement.classList.contains('text-green-700')) {
-                                        HTMLElement.style[prop as any] = 'rgb(21, 128, 61)';
-                                    } else if (HTMLElement.classList.contains('text-yellow-700')) {
-                                        HTMLElement.style[prop as any] = 'rgb(161, 98, 7)';
-                                    } else if (HTMLElement.classList.contains('text-muted-foreground') || HTMLElement.classList.contains('text-slate-500') || HTMLElement.classList.contains('text-slate-400')) {
-                                        HTMLElement.style[prop as any] = 'rgb(100, 116, 139)';
-                                    } else {
-                                        HTMLElement.style[prop as any] = 'rgb(15, 23, 42)'; // default text-slate-900
-                                    }
-                                } else if (prop === 'borderColor') {
-                                    HTMLElement.style[prop as any] = 'rgb(226, 232, 240)'; // default border-slate-200
-                                }
-                            }
-                        });
-                    });
+                cacheBust: true,
+                style: {
+                    margin: '0',
                 }
             });
 
@@ -142,11 +99,11 @@ export default function FacturasPage() {
                 format: 'a4'
             });
 
-            const imgData = canvas.toDataURL('image/png');
+            const imgProps = pdf.getImageProperties(dataUrl);
             const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
 
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
 
             const fileName = `Factura_${fac.numero_factura}.pdf`;
             const pdfBlob = pdf.output('blob');
