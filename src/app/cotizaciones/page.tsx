@@ -42,6 +42,25 @@ export default function CotizacionesPage() {
     const [clientResults, setClientResults] = useState<any[]>([]);
     const [isSearchingClients, setIsSearchingClients] = useState(false);
 
+    // Dynamic Features State
+    const defaultEquipoFeatures = [
+        'Equipo GPS 4G nuevo',
+        'SIM card 4G activada',
+        'Instalación profesional',
+        'Configuración completa',
+        'Garantía de 12 meses'
+    ];
+    const defaultServicioFeatures = [
+        'Rastreo en tiempo real 24/7',
+        'Plataforma web y app móvil',
+        'Historial de recorridos',
+        'Creación de geocercas',
+        'Alertas configurables',
+        'Soporte técnico'
+    ];
+    const [equipoFeatures, setEquipoFeatures] = useState<string[]>(defaultEquipoFeatures);
+    const [servicioFeatures, setServicioFeatures] = useState<string[]>(defaultServicioFeatures);
+
     useEffect(() => {
         fetchCotizaciones();
     }, []);
@@ -135,7 +154,9 @@ export default function CotizacionesPage() {
                 monto_subtotal: subtotal,
                 monto_itbms: itbms,
                 monto_total: total,
-                estado: 'borrador'
+                estado: 'borrador',
+                caracteristicas_equipo: equipoFeatures,
+                caracteristicas_servicio: servicioFeatures
             };
 
             if (isEditing && editingId) {
@@ -174,6 +195,8 @@ export default function CotizacionesPage() {
             ...item,
             id: item.id || Math.random().toString()
         })));
+        setEquipoFeatures(cot.caracteristicas_equipo?.length > 0 ? cot.caracteristicas_equipo : defaultEquipoFeatures);
+        setServicioFeatures(cot.caracteristicas_servicio?.length > 0 ? cot.caracteristicas_servicio : defaultServicioFeatures);
         setIsModalOpen(true);
     };
 
@@ -259,16 +282,64 @@ export default function CotizacionesPage() {
                 theme: 'striped'
             });
 
-            // Totals
+            // Features (After Table)
             const lastTable = (doc as any).lastAutoTable;
             const finalY = lastTable ? lastTable.finalY + 10 : 85;
+            let currentY = lastTable ? lastTable.finalY + 15 : 85;
+
+            const eqFeatures = cot.caracteristicas_equipo || [];
+            const svFeatures = cot.caracteristicas_servicio || [];
+
+            if (eqFeatures.length > 0 || svFeatures.length > 0) {
+                if (currentY > 230) {
+                    doc.addPage();
+                    currentY = 20;
+                }
+
+                doc.setFontSize(9);
+
+                if (eqFeatures.length > 0) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+                    doc.text('EQUIPO GPS INCLUYE:', 14, currentY);
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80, 80, 80);
+                    let yFeature = currentY + 6;
+                    eqFeatures.forEach((feat: string) => {
+                        if (yFeature > 280) { doc.addPage(); yFeature = 20; }
+                        doc.text(`\u2022 ${feat}`, 14, yFeature);
+                        yFeature += 5;
+                    });
+                }
+
+                if (svFeatures.length > 0) {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+                    doc.text('SERVICIO MENSUAL INCLUYE:', 105, currentY);
+
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(80, 80, 80);
+                    let yFeature = currentY + 6;
+                    svFeatures.forEach((feat: string) => {
+                        if (yFeature > 280) { doc.addPage(); yFeature = 20; }
+                        doc.text(`\u2022 ${feat}`, 105, yFeature);
+                        yFeature += 5;
+                    });
+                }
+
+                currentY += Math.max(eqFeatures.length * 5, svFeatures.length * 5) + 15;
+            } else {
+                currentY = finalY;
+            }
 
             // Check if we need a new page for totals
-            let currentY = finalY;
-            if (finalY > 260) {
+            if (currentY > 250) {
                 doc.addPage();
                 currentY = 20;
             }
+
+            doc.setTextColor(0, 0, 0);
 
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);
@@ -363,6 +434,8 @@ export default function CotizacionesPage() {
         setSelectedCliente(null);
         setProspectName('');
         setItems([{ id: Math.random().toString(), description: '', quantity: 1, price: 0, hasItbms: true }]);
+        setEquipoFeatures(defaultEquipoFeatures);
+        setServicioFeatures(defaultServicioFeatures);
         setClientSearch('');
         setIsEditing(false);
         setEditingId(null);
@@ -679,6 +752,133 @@ export default function CotizacionesPage() {
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Section 3: Características y Servicios (Editable) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                                {/* Equipo Features */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-semibold text-primary uppercase tracking-wider flex items-center gap-2">
+                                            <Receipt size={14} /> Equipo GPS Incluye
+                                        </h3>
+                                    </div>
+                                    <div className="space-y-1.5 bg-card/50 p-4 rounded-2xl border border-border/50">
+                                        {defaultEquipoFeatures.map((feat, idx) => {
+                                            const isChecked = equipoFeatures.includes(feat);
+                                            return (
+                                                <label key={idx} className="flex items-start gap-3 p-2 rounded-xl hover:bg-white/5 transition-all cursor-pointer group">
+                                                    <div className="pt-0.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setEquipoFeatures([...equipoFeatures, feat]);
+                                                                else setEquipoFeatures(equipoFeatures.filter(f => f !== feat));
+                                                            }}
+                                                            className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary focus:ring-offset-0 transition-all cursor-pointer"
+                                                        />
+                                                    </div>
+                                                    <span className={`text-sm flex-1 transition-all ${isChecked ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
+                                                        {feat}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+
+                                        {/* Custom Added Features */}
+                                        {equipoFeatures.filter(f => !defaultEquipoFeatures.includes(f)).map((feat, idx) => (
+                                            <div key={`custom-${idx}`} className="flex items-center gap-2 mt-2">
+                                                <input
+                                                    type="text"
+                                                    value={feat}
+                                                    onChange={(e) => {
+                                                        const newFeatures = [...equipoFeatures];
+                                                        const actualIdx = newFeatures.indexOf(feat);
+                                                        if (actualIdx !== -1) newFeatures[actualIdx] = e.target.value;
+                                                        setEquipoFeatures(newFeatures);
+                                                    }}
+                                                    className="flex-1 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm focus:ring-1 focus:ring-primary/40 outline-none"
+                                                />
+                                                <button
+                                                    onClick={() => setEquipoFeatures(equipoFeatures.filter(f => f !== feat))}
+                                                    className="p-2 text-muted-foreground hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            onClick={() => setEquipoFeatures([...equipoFeatures, 'Nueva característica...'])}
+                                            className="w-full mt-3 text-xs bg-white/5 text-muted-foreground py-2 rounded-xl hover:bg-white/10 hover:text-white transition-all font-bold uppercase flex items-center justify-center gap-1.5"
+                                        >
+                                            <Plus size={14} /> Añadir otra característica
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Servicio Features */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-semibold text-primary uppercase tracking-wider flex items-center gap-2">
+                                            <Receipt size={14} /> Servicio Mensual Incluye
+                                        </h3>
+                                    </div>
+                                    <div className="space-y-1.5 bg-card/50 p-4 rounded-2xl border border-border/50">
+                                        {defaultServicioFeatures.map((feat, idx) => {
+                                            const isChecked = servicioFeatures.includes(feat);
+                                            return (
+                                                <label key={idx} className="flex items-start gap-3 p-2 rounded-xl hover:bg-white/5 transition-all cursor-pointer group">
+                                                    <div className="pt-0.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={(e) => {
+                                                                if (e.target.checked) setServicioFeatures([...servicioFeatures, feat]);
+                                                                else setServicioFeatures(servicioFeatures.filter(f => f !== feat));
+                                                            }}
+                                                            className="w-4 h-4 rounded border-white/20 bg-white/5 text-primary focus:ring-primary focus:ring-offset-0 transition-all cursor-pointer"
+                                                        />
+                                                    </div>
+                                                    <span className={`text-sm flex-1 transition-all ${isChecked ? 'text-slate-200 font-medium' : 'text-slate-500'}`}>
+                                                        {feat}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+
+                                        {/* Custom Added Features */}
+                                        {servicioFeatures.filter(f => !defaultServicioFeatures.includes(f)).map((feat, idx) => (
+                                            <div key={`custom-svc-${idx}`} className="flex items-center gap-2 mt-2">
+                                                <input
+                                                    type="text"
+                                                    value={feat}
+                                                    onChange={(e) => {
+                                                        const newFeatures = [...servicioFeatures];
+                                                        const actualIdx = newFeatures.indexOf(feat);
+                                                        if (actualIdx !== -1) newFeatures[actualIdx] = e.target.value;
+                                                        setServicioFeatures(newFeatures);
+                                                    }}
+                                                    className="flex-1 bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm focus:ring-1 focus:ring-primary/40 outline-none"
+                                                />
+                                                <button
+                                                    onClick={() => setServicioFeatures(servicioFeatures.filter(f => f !== feat))}
+                                                    className="p-2 text-muted-foreground hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            onClick={() => setServicioFeatures([...servicioFeatures, 'Nuev servicio...'])}
+                                            className="w-full mt-3 text-xs bg-white/5 text-muted-foreground py-2 rounded-xl hover:bg-white/10 hover:text-white transition-all font-bold uppercase flex items-center justify-center gap-1.5"
+                                        >
+                                            <Plus size={14} /> Añadir otro servicio
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Footer Totals */}
@@ -791,6 +991,36 @@ export default function CotizacionesPage() {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* Features (If any) */}
+                                {(selectedCotizacion.caracteristicas_equipo?.length > 0 || selectedCotizacion.caracteristicas_servicio?.length > 0) && (
+                                    <div className="grid grid-cols-2 gap-8 mt-8">
+                                        {selectedCotizacion.caracteristicas_equipo?.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Equipo GPS Incluye</h4>
+                                                <ul className="space-y-2">
+                                                    {selectedCotizacion.caracteristicas_equipo.map((feat: string, i: number) => (
+                                                        <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                                                            <span className="text-blue-500 font-bold">✓</span> <span className="flex-1">{feat}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {selectedCotizacion.caracteristicas_servicio?.length > 0 && (
+                                            <div>
+                                                <h4 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Servicio Mensual Incluye</h4>
+                                                <ul className="space-y-2">
+                                                    {selectedCotizacion.caracteristicas_servicio.map((feat: string, i: number) => (
+                                                        <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
+                                                            <span className="text-blue-500 font-bold">✓</span> <span className="flex-1">{feat}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Totals */}
                                 <div className="flex justify-end pt-6 border-t border-slate-100">
