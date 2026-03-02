@@ -259,7 +259,43 @@ export default function CotizacionesPage() {
                 scale: 2,
                 useCORS: true,
                 logging: false,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                onclone: (documentClone) => {
+                    const elements = documentClone.querySelectorAll('*');
+                    elements.forEach((el) => {
+                        const HTMLElement = el as HTMLElement;
+                        const style = window.getComputedStyle(HTMLElement);
+
+                        // Fix for Tailwind CSS v4 lab() / oklch() colors not supported by html2canvas
+                        const propsToCheck = ['color', 'backgroundColor', 'borderColor', 'textDecorationColor', 'fill', 'stroke'];
+
+                        propsToCheck.forEach(prop => {
+                            const val = style.getPropertyValue(prop);
+                            if (val && (val.includes('lab(') || val.includes('oklch(') || val.includes('color('))) {
+                                // Default fallbacks based on visual hierarchy
+                                if (prop === 'backgroundColor') {
+                                    if (HTMLElement.classList.contains('bg-blue-600') || HTMLElement.classList.contains('bg-primary')) {
+                                        HTMLElement.style[prop as any] = 'rgb(37, 99, 235)';
+                                    } else if (HTMLElement.classList.contains('bg-slate-50')) {
+                                        HTMLElement.style[prop as any] = 'rgb(248, 250, 252)';
+                                    } else {
+                                        HTMLElement.style[prop as any] = 'rgb(255, 255, 255)';
+                                    }
+                                } else if (prop === 'color') {
+                                    if (HTMLElement.classList.contains('text-blue-600') || HTMLElement.classList.contains('text-primary')) {
+                                        HTMLElement.style[prop as any] = 'rgb(37, 99, 235)';
+                                    } else if (HTMLElement.classList.contains('text-muted-foreground') || HTMLElement.classList.contains('text-slate-500')) {
+                                        HTMLElement.style[prop as any] = 'rgb(100, 116, 139)';
+                                    } else {
+                                        HTMLElement.style[prop as any] = 'rgb(15, 23, 42)'; // default text-slate-900
+                                    }
+                                } else if (prop === 'borderColor') {
+                                    HTMLElement.style[prop as any] = 'rgb(226, 232, 240)'; // default border-slate-200
+                                }
+                            }
+                        });
+                    });
+                }
             });
 
             // Restore original width
