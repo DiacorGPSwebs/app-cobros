@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User, Phone, Mail, Calendar, CreditCard, Search, X, ShieldCheck, Car, ChevronRight, Calculator, Save, Edit3, Loader2, Plus, Trash2, Clock, RefreshCw, FileText, Receipt, Upload, ExternalLink, Check } from 'lucide-react';
-import { format, addMonths, isAfter, setDate, startOfToday, subMonths, eachMonthOfInterval, startOfMonth } from 'date-fns';
+import { format, addMonths, isAfter, setDate, startOfToday, subMonths, eachMonthOfInterval, startOfMonth, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 interface Cliente {
@@ -19,6 +19,8 @@ interface Cliente {
     Fecha_Ultimo_Pago?: string;
     total_deuda?: number;
     tiene_mora?: boolean;
+    proxima_anualidad?: string | null;
+    dias_para_anualidad?: number | null;
 }
 
 interface UsuarioGPS {
@@ -76,6 +78,7 @@ export default function ClientesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [planFilter, setPlanFilter] = useState<'ALL' | 'MENSUAL' | 'ANUAL'>('ALL');
     const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
     const [extraData, setExtraData] = useState<{ usuarios: UsuarioGPS[], vehiculos: Vehiculo[], cobros: Cobro[] }>({ usuarios: [], vehiculos: [], cobros: [] });
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
@@ -242,6 +245,8 @@ export default function ClientesPage() {
             // Fetch all invoices to calculate debt per client
             const { data: allInvoices } = await supabase.from('Facturas').select('id, cliente_id, monto_total, fecha_emision, estado');
             const { data: allPayments } = await supabase.from('Cobros').select('monto_pagado, factura_id');
+            const { data: allUsers } = await supabase.from('Usuarios').select('id, CLIENTE_ID');
+            const { data: allVehicles } = await supabase.from('Vehiculos').select('id, Usuario_ID, Fecha_Anualidad');
 
             const clientesConDeuda = (data || []).map(c => {
                 const clientInvoices = (allInvoices || []).filter(f => f.cliente_id === c.id);
@@ -253,6 +258,9 @@ export default function ClientesPage() {
                     const totalPagado = pagos.reduce((acc, p) => acc + p.monto_pagado, 0);
                     const saldo = f.monto_total - totalPagado;
 
+                    // Ignoramos anualadas
+                    if (f.estado === 'anulada') return;
+
                     if (saldo > 0) {
                         totalDeuda += saldo;
                         // Mora check: > 60 days
@@ -262,7 +270,29 @@ export default function ClientesPage() {
                     }
                 });
 
-                return { ...c, total_deuda: totalDeuda, tiene_mora: tieneMora };
+                let proxima_anualidad = null;
+                let dias_para_anualidad = null;
+
+                const isAnual = c.Plan && (c.Plan.toLowerCase().includes('anual') || c.Plan.toLowerCase().includes('anualidad'));
+
+                if (isAnual && allUsers && allVehicles) {
+                    const clientUsers = allUsers.filter(u => u.CLIENTE_ID === c.id).map(u => u.id);
+                    const clientVehicles = allVehicles.filter(v => clientUsers.includes(v.Usuario_ID) && v.Fecha_Anualidad);
+
+                    if (clientVehicles.length > 0) {
+                        // Find closest/most overdue date
+                        const sortedVehicles = [...clientVehicles].sort((a, b) => {
+                            return new Date(a.Fecha_Anualidad).getTime() - new Date(b.Fecha_Anualidad).getTime();
+                        });
+
+                        proxima_anualidad = sortedVehicles[0].Fecha_Anualidad;
+                        const today = startOfToday();
+                        const anualidadDate = parseLocalDate(proxima_anualidad);
+                        dias_para_anualidad = differenceInCalendarDays(anualidadDate, today);
+                    }
+                }
+
+                return { ...c, total_deuda: totalDeuda, tiene_mora: tieneMora, proxima_anualidad, dias_para_anualidad };
             });
 
             setClientes(clientesConDeuda);
@@ -1028,11 +1058,22 @@ export default function ClientesPage() {
         setEditVehiculos(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
     };
 
-    const filteredClientes = clientes.filter(c =>
-        c.Nombre_Completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.Telefono?.includes(searchTerm) ||
-        c.Correo?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const filteredClientes = clientes.filter(c => {
+        const matchesSearch = c.Nombre_Completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            c.Telefono?.includes(searchTerm) ||
+            c.Correo?.toLowerCase().includes(searchTerm.toLowerCase());
+
+        if (!matchesSearch) return false;
+
+        if (planFilter === 'ALL') return true;
+
+        const isAnual = c.Plan && (c.Plan.toLowerCase().includes('anual') || c.Plan.toLowerCase().includes('anualidad'));
+
+        if (planFilter === 'ANUAL') return isAnual;
+        if (planFilter === 'MENSUAL') return !isAnual;
+
+        return true;
+    });
 
     if (isLoading) return <div className="p-8 text-center text-muted-foreground animate-pulse">Cargando clientes...</div>;
 
@@ -1053,6 +1094,19 @@ export default function ClientesPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full bg-card/40 border border-white/5 rounded-2xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary/40 focus:bg-card/60 outline-none transition-all placeholder:text-muted-foreground/40 text-white"
                         />
+                    </div>
+
+                    <div className="relative group">
+                        <select
+                            value={planFilter}
+                            onChange={(e) => setPlanFilter(e.target.value as any)}
+                            className="appearance-none bg-card/40 border border-white/5 rounded-2xl py-3 pl-4 pr-10 focus:ring-2 focus:ring-primary/40 focus:bg-card/60 outline-none transition-all text-white/90 font-medium cursor-pointer"
+                        >
+                            <option value="ALL" className="bg-slate-900 text-white">Todos los Planes</option>
+                            <option value="MENSUAL" className="bg-slate-900 text-white">Mensualidades</option>
+                            <option value="ANUAL" className="bg-slate-900 text-white">Anualidades</option>
+                        </select>
+                        <ChevronRight size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-all rotate-90 pointer-events-none" />
                     </div>
                     <button
                         onClick={handleSync}
@@ -1123,6 +1177,46 @@ export default function ClientesPage() {
                                 {/* Debt Indicator - Implementation */}
                                 <div className="mt-6">
                                     {(() => {
+                                        if (isAnual) {
+                                            const hasAnualidad = cliente.dias_para_anualidad !== undefined && cliente.dias_para_anualidad !== null;
+                                            const dias = cliente.dias_para_anualidad || 0;
+
+                                            const statusLabel = !hasAnualidad ? 'PENDIENTE' : (dias < 0 ? 'VENCIDO' : (dias <= 30 ? 'POR VENCER' : 'AL DÍA'));
+                                            const statusColor = !hasAnualidad ? 'text-muted-foreground' : (dias < 0 ? 'text-red-500' : (dias <= 30 ? 'text-yellow-500' : 'text-green-500'));
+                                            const bgColor = !hasAnualidad ? 'bg-white/5' : (dias < 0 ? 'bg-red-500/5' : (dias <= 30 ? 'bg-yellow-500/5' : 'bg-green-500/5'));
+                                            const borderColor = !hasAnualidad ? 'border-white/10' : (dias < 0 ? 'border-red-500/10' : (dias <= 30 ? 'border-yellow-500/10' : 'border-green-500/10'));
+
+                                            return (
+                                                <div className={`flex items-center justify-between p-4 rounded-2xl ${bgColor} border ${borderColor} transition-all`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${statusColor} bg-white/5`}>
+                                                            <Calendar size={18} />
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Renovación</p>
+                                                            {hasAnualidad ? (
+                                                                <p className={`text-lg font-black ${statusColor}`}>
+                                                                    {Math.abs(dias)}
+                                                                    <span className="text-[10px] text-muted-foreground ml-2 font-medium">DÍAS {dias < 0 ? 'VENCIDOS' : 'RESTANTES'}</span>
+                                                                </p>
+                                                            ) : (
+                                                                <p className={`text-lg font-black ${statusColor}`}>
+                                                                    S/F
+                                                                    <span className="text-[10px] text-muted-foreground ml-2 font-medium">SIN VEHÍCULOS O FECHA</span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Estado</p>
+                                                        <span className={`text-[10px] font-black uppercase ${statusColor} ${(hasAnualidad && (dias < 0 || (dias <= 30 && dias >= 0))) ? 'animate-pulse' : ''}`}>
+                                                            {statusLabel}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
                                         // Calculate months owed using the unified function
                                         const owedPeriods = detectOwedPeriods(cliente, []);
                                         const monthsOwed = owedPeriods.length;
@@ -2104,56 +2198,114 @@ export default function ClientesPage() {
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-full -mr-12 -mt-12 group-hover:bg-primary/10 transition-colors duration-700" />
 
                                             <div className="flex flex-col md:flex-row justify-between gap-6 relative z-10">
-                                                <div className="space-y-4 flex-1">
-                                                    <div>
-                                                        <p className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-2">Mensualidades Pendientes de Facturar</p>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {detectOwedPeriods(selectedCliente, clientDocs.facturas).length > 0 ? (
-                                                                detectOwedPeriods(selectedCliente, clientDocs.facturas).map((p, i) => (
-                                                                    <span key={i} className="px-4 py-2 bg-primary/10 text-primary text-[10px] font-black uppercase rounded-xl border border-primary/20 shadow-sm animate-in fade-in zoom-in duration-300" style={{ animationDelay: `${i * 100}ms` }}>
-                                                                        {p.label}
+                                                {(() => {
+                                                    const isAnual = selectedCliente.Plan && (selectedCliente.Plan.toLowerCase().includes('anual') || selectedCliente.Plan.toLowerCase().includes('anualidad'));
+                                                    return isAnual ? (
+                                                        <div className="space-y-4 flex-1">
+                                                            <div>
+                                                                <p className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-2">Estado de Anualidad</p>
+                                                                {selectedCliente.dias_para_anualidad !== undefined && selectedCliente.dias_para_anualidad !== null ? (
+                                                                    <span className={`px-4 py-2 text-[10px] font-black uppercase rounded-xl border shadow-sm ${selectedCliente.dias_para_anualidad < 0
+                                                                        ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                                                                        : (selectedCliente.dias_para_anualidad <= 30
+                                                                            ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                                                                            : 'bg-green-500/10 text-green-500 border-green-500/20')
+                                                                        }`}>
+                                                                        {selectedCliente.dias_para_anualidad < 0 ? 'VENCIDO' : (selectedCliente.dias_para_anualidad <= 30 ? 'POR VENCER' : 'AL DÍA')}
+                                                                        ({Math.abs(selectedCliente.dias_para_anualidad)} DÍAS {selectedCliente.dias_para_anualidad < 0 ? 'VENCIDOS' : 'RESTANTES'})
                                                                     </span>
-                                                                ))
-                                                            ) : (
-                                                                <span className="text-xs font-bold text-green-500 bg-green-500/10 px-4 py-2 rounded-xl border border-green-500/20">TODOS LOS CICLOS AL DÍA</span>
-                                                            )}
+                                                                ) : (
+                                                                    <span className="text-xs font-bold text-muted-foreground bg-white/5 px-4 py-2 rounded-xl border border-white/10">SIN VEHÍCULOS</span>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                </div>
+                                                    ) : (
+                                                        <div className="space-y-4 flex-1">
+                                                            <div>
+                                                                <p className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-2">Mensualidades Pendientes de Facturar</p>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {detectOwedPeriods(selectedCliente, clientDocs.facturas).length > 0 ? (
+                                                                        detectOwedPeriods(selectedCliente, clientDocs.facturas).map((p, i) => (
+                                                                            <span key={i} className="px-4 py-2 bg-primary/10 text-primary text-[10px] font-black uppercase rounded-xl border border-primary/20 shadow-sm animate-in fade-in zoom-in duration-300" style={{ animationDelay: `${i * 100}ms` }}>
+                                                                                {p.label}
+                                                                            </span>
+                                                                        ))
+                                                                    ) : (
+                                                                        <span className="text-xs font-bold text-green-500 bg-green-500/10 px-4 py-2 rounded-xl border border-green-500/20">TODOS LOS CICLOS AL DÍA</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
 
-                                                <div className="md:border-l border-white/5 md:pl-8 space-y-4 min-w-[200px]">
-                                                    <div>
-                                                        <p className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-1">Monto Estimado</p>
-                                                        <p className="text-3xl font-black text-white">
-                                                            ${(detectOwedPeriods(selectedCliente, clientDocs.facturas).length * (selectedCliente.Tarifa || 0) * (selectedCliente.Cantidad_Vehiculo || 0)).toLocaleString()}
-                                                        </p>
-                                                        <p className="text-[10px] text-muted-foreground font-medium italic mt-1">Sugerencia basada en periodos faltantes</p>
-                                                    </div>
-                                                </div>
                                             </div>
 
-                                            {detectOwedPeriods(selectedCliente, clientDocs.facturas).length > 0 && (
+                                            <div className="md:border-l border-white/5 md:pl-8 space-y-4 min-w-[200px]">
+                                                {(() => {
+                                                    const isAnual = selectedCliente.Plan && (selectedCliente.Plan.toLowerCase().includes('anual') || selectedCliente.Plan.toLowerCase().includes('anualidad'));
+                                                    return (
+                                                        <div>
+                                                            <p className="text-[10px] uppercase font-black text-muted-foreground tracking-widest mb-1">Monto Estimado</p>
+                                                            <p className="text-3xl font-black text-white">
+                                                                ${isAnual
+                                                                    ? ((selectedCliente.Tarifa || 0) * (selectedCliente.Cantidad_Vehiculo || 0)).toLocaleString()
+                                                                    : (detectOwedPeriods(selectedCliente, clientDocs.facturas).length * (selectedCliente.Tarifa || 0) * (selectedCliente.Cantidad_Vehiculo || 0)).toLocaleString()}
+                                                            </p>
+                                                            <p className="text-[10px] text-muted-foreground font-medium italic mt-1">Sugerencia basada en {isAnual ? 'tarifa anual' : 'periodos faltantes'}</p>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </div>
+
+                                        {(() => {
+                                            const isAnual = selectedCliente.Plan && (selectedCliente.Plan.toLowerCase().includes('anual') || selectedCliente.Plan.toLowerCase().includes('anualidad'));
+                                            return isAnual ? (
                                                 <button
                                                     onClick={async () => {
                                                         const nextNum = await getNextInvoiceNumber();
-                                                        const periods = detectOwedPeriods(selectedCliente, clientDocs.facturas);
-                                                        const count = periods.length;
                                                         setInvoiceFormData({
                                                             ...invoiceFormData,
                                                             numero: nextNum,
-                                                            meses: count,
-                                                            periodos: periods,
-                                                            desde_mes: periods.length > 0 ? format(periods[0].date, 'yyyy-MM') : format(subMonths(new Date(), 1), 'yyyy-MM'),
-                                                            monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * count
+                                                            meses: 1,
+                                                            periodos: [{
+                                                                label: `Anualidad ${format(new Date(), 'yyyy')}`,
+                                                                date: new Date()
+                                                            }],
+                                                            desde_mes: format(new Date(), 'yyyy-MM'),
+                                                            monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0)
                                                         });
                                                         setIsCreatingInvoice(true);
                                                     }}
-                                                    className="w-full mt-4 bg-primary text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
+                                                    className="w-full mt-4 bg-purple-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-purple-600/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
                                                 >
-                                                    <Receipt size={18} /> FACTURAR ESTOS PERIODOS
+                                                    <Calendar size={18} /> RENOVAR ANUALIDAD
                                                 </button>
-                                            )}
-                                        </div>
+                                            ) : (
+                                                detectOwedPeriods(selectedCliente, clientDocs.facturas).length > 0 ? (
+                                                    <button
+                                                        onClick={async () => {
+                                                            const nextNum = await getNextInvoiceNumber();
+                                                            const periods = detectOwedPeriods(selectedCliente, clientDocs.facturas);
+                                                            const count = periods.length;
+                                                            setInvoiceFormData({
+                                                                ...invoiceFormData,
+                                                                numero: nextNum,
+                                                                meses: count,
+                                                                periodos: periods,
+                                                                desde_mes: periods.length > 0 ? format(periods[0].date, 'yyyy-MM') : format(subMonths(new Date(), 1), 'yyyy-MM'),
+                                                                monto: (selectedCliente?.Tarifa || 0) * (selectedCliente?.Cantidad_Vehiculo || 0) * count
+                                                            });
+                                                            setIsCreatingInvoice(true);
+                                                        }}
+                                                        className="w-full mt-4 bg-primary text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"
+                                                    >
+                                                        <Receipt size={18} /> FACTURAR ESTOS PERIODOS
+                                                    </button>
+                                                ) : null
+                                            );
+                                        })()}
                                     </div>
 
                                     {/* Sección Vehículos */}
