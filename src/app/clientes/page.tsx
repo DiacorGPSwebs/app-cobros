@@ -79,6 +79,7 @@ export default function ClientesPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [planFilter, setPlanFilter] = useState<'ALL' | 'MENSUAL' | 'ANUAL'>('ALL');
+    const [paymentDayFilter, setPaymentDayFilter] = useState<'ALL' | '1' | '15' | '30'>('ALL');
     const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
     const [extraData, setExtraData] = useState<{ usuarios: UsuarioGPS[], vehiculos: Vehiculo[], cobros: Cobro[] }>({ usuarios: [], vehiculos: [], cobros: [] });
     const [isLoadingDetails, setIsLoadingDetails] = useState(false);
@@ -1065,6 +1066,10 @@ export default function ClientesPage() {
 
         if (!matchesSearch) return false;
 
+        if (paymentDayFilter !== 'ALL') {
+            if (c.Dia_De_Pago !== Number(paymentDayFilter)) return false;
+        }
+
         if (planFilter === 'ALL') return true;
 
         const isAnual = c.Plan && (c.Plan.toLowerCase().includes('anual') || c.Plan.toLowerCase().includes('anualidad'));
@@ -1094,6 +1099,20 @@ export default function ClientesPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full bg-card/40 border border-white/5 rounded-2xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary/40 focus:bg-card/60 outline-none transition-all placeholder:text-muted-foreground/40 text-white"
                         />
+                    </div>
+
+                    <div className="relative group hidden sm:block">
+                        <select
+                            value={paymentDayFilter}
+                            onChange={(e) => setPaymentDayFilter(e.target.value as any)}
+                            className="appearance-none bg-card/40 border border-white/5 rounded-2xl py-3 pl-4 pr-10 focus:ring-2 focus:ring-primary/40 focus:bg-card/60 outline-none transition-all text-white/90 font-medium cursor-pointer"
+                        >
+                            <option value="ALL" className="bg-slate-900 text-white">Todos los Días</option>
+                            <option value="1" className="bg-slate-900 text-white">Días 1</option>
+                            <option value="15" className="bg-slate-900 text-white">Días 15</option>
+                            <option value="30" className="bg-slate-900 text-white">Días 30</option>
+                        </select>
+                        <ChevronRight size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-all rotate-90 pointer-events-none" />
                     </div>
 
                     <div className="relative group">
