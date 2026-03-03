@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, FileText, Receipt, LayoutDashboard, Users, UserCircle } from 'lucide-react';
+import { Search, FileText, Receipt, LayoutDashboard, Users, UserCircle, Package } from 'lucide-react';
 
 export default function Sidebar() {
     const pathname = usePathname();
@@ -10,6 +10,7 @@ export default function Sidebar() {
     const menuItems = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
         { name: 'Clientes', href: '/clientes', icon: Users },
+        { name: 'Inventario', href: '/inventario', icon: Package },
     ];
 
     const salesItems = [
