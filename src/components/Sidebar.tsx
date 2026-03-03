@@ -37,11 +37,13 @@ export default function Sidebar() {
 
     return (
         <aside className="w-64 border-r border-border bg-card/50 backdrop-blur-md hidden md:flex flex-col h-screen sticky top-0">
-            <div className="p-8">
-                <h1 className="text-2xl font-black text-primary tracking-tighter flex items-center gap-2">
-                    <Image src="/logo.png" alt="DIACOR GPS Logo" width={32} height={32} className="object-contain" />
-                    DIACOR GPS
-                </h1>
+            <div className="p-8 pb-4">
+                <div className="flex flex-col items-start gap-3">
+                    <Image src="/logo.png" alt="DIACOR GPS Logo" width={48} height={48} className="object-contain" />
+                    <h1 className="text-xl font-black text-primary tracking-tighter">
+                        DIACOR GPS
+                    </h1>
+                </div>
             </div>
 
             <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
