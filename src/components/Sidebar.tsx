@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Search, FileText, Receipt, LayoutDashboard, Users, UserCircle, Package } from 'lucide-react';
 
@@ -38,7 +39,7 @@ export default function Sidebar() {
         <aside className="w-64 border-r border-border bg-card/50 backdrop-blur-md hidden md:flex flex-col h-screen sticky top-0">
             <div className="p-8">
                 <h1 className="text-2xl font-black text-primary tracking-tighter flex items-center gap-2">
-                    <div className="w-2 h-8 bg-primary rounded-full" />
+                    <Image src="/logo.png" alt="DIACOR GPS Logo" width={32} height={32} className="object-contain" />
                     DIACOR GPS
                 </h1>
             </div>
