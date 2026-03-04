@@ -212,35 +212,67 @@ export async function POST() {
         // 8. RECALCULAR CANTIDADES DE VEHÍCULOS PARA TODOS LOS CLIENTES
         console.log('--- Recalculando Cantidades de Vehículos ---');
 
-        // Obtenemos todos los vínculos actuales Clientes -> Usuarios -> Vehículos
-        const { data: allStats, error: sError } = await supabase
-            .from('Usuarios')
-            .select('CLIENTE_ID, Vehiculos(count)')
-            .not('CLIENTE_ID', 'is', null);
+        // 8.1 Obtener todos los vehículos con su Usuario_ID (Paginado)
+        let allFinalVehs: any[] = [];
+        let fvHasMore = true;
+        let fvOffset = 0;
+        while (fvHasMore) {
+            const { data: fvPage, error: fvError } = await supabase
+                .from('Vehiculos')
+                .select('Usuario_ID')
+                .range(fvOffset, fvOffset + 1000 - 1);
+            if (fvError) throw fvError;
+            if (fvPage && fvPage.length > 0) {
+                allFinalVehs = [...allFinalVehs, ...fvPage];
+                fvOffset += 1000;
+                fvHasMore = fvPage.length === 1000;
+            } else {
+                fvHasMore = false;
+            }
+        }
 
-        if (!sError && allStats) {
-            // Agrupar conteos por Cliente
+        // 8.2 Obtener todos los usuarios vinculados a clientes (Paginado)
+        let allUserLinks: any[] = [];
+        let ulHasMore = true;
+        let ulOffset = 0;
+        while (ulHasMore) {
+            const { data: ulPage, error: ulError } = await supabase
+                .from('Usuarios')
+                .select('id, CLIENTE_ID')
+                .not('CLIENTE_ID', 'is', null)
+                .range(ulOffset, ulOffset + 1000 - 1);
+            if (ulError) throw ulError;
+            if (ulPage && ulPage.length > 0) {
+                allUserLinks = [...allUserLinks, ...ulPage];
+                ulOffset += 1000;
+                ulHasMore = ulPage.length === 1000;
+            } else {
+                ulHasMore = false;
+            }
+        }
+
+        if (allFinalVehs.length > 0 && allUserLinks.length > 0) {
+            // Mapeo Usuario_ID -> CLIENTE_ID
+            const userToClient = new Map();
+            allUserLinks.forEach(u => userToClient.set(u.id, u.CLIENTE_ID));
+
+            // Conteo real por CLIENTE_ID
             const clientCounts = new Map();
-            allStats.forEach((u: any) => {
-                const count = u.Vehiculos?.[0]?.count || 0;
-                clientCounts.set(u.CLIENTE_ID, (clientCounts.get(u.CLIENTE_ID) || 0) + count);
+            allFinalVehs.forEach(v => {
+                const clientId = userToClient.get(v.Usuario_ID);
+                if (clientId) {
+                    clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
+                }
             });
 
-            // Actualizar cada cliente
-            for (const [clientId, total] of clientCounts.entries()) {
+            // Actualizar cada cliente con el conteo real
+            const { data: allClients } = await supabase.from('CLIENTES').select('id');
+            for (const c of allClients || []) {
+                const total = clientCounts.get(c.id) || 0;
                 await supabase
                     .from('CLIENTES')
                     .update({ Cantidad_Vehiculo: total })
-                    .eq('id', clientId);
-            }
-
-            // También poner a 0 los clientes que no tienen usuarios/vehículos
-            const { data: allClients } = await supabase.from('CLIENTES').select('id');
-            const clientsWithData = new Set(clientCounts.keys());
-            for (const c of allClients || []) {
-                if (!clientsWithData.has(c.id)) {
-                    await supabase.from('CLIENTES').update({ Cantidad_Vehiculo: 0 }).eq('id', c.id);
-                }
+                    .eq('id', c.id);
             }
         }
 
