@@ -154,28 +154,39 @@ export async function POST() {
 
             for (const v of allVehsForCleanup) {
                 if (!v.Placas || !v.Usuario_ID) continue;
-                const key = `${v.Usuario_ID}-${normalizePlate(v.Placas)}`;
+                const plate = normalizePlate(v.Placas);
+                const key = `${v.Usuario_ID}-${plate}`;
 
                 if (seen.has(key)) {
                     const existing = seen.get(key);
-                    let keep = existing;
-                    let discard = v;
 
-                    if (v.finder_id && !existing.finder_id) {
-                        keep = v;
-                        discard = existing;
+                    // Solo tratamos como duplicado si uno de los dos NO tiene finder_id
+                    // Si ambos tienen finder_id, son dispositivos diferentes en Finder (como el caso de EB0281)
+                    if (!v.finder_id || !existing.finder_id) {
+                        let keep = existing;
+                        let discard = v;
+
+                        if (v.finder_id && !existing.finder_id) {
+                            keep = v;
+                            discard = existing;
+                        }
+
+                        if (discard.Fecha_Anualidad && !keep.Fecha_Anualidad) {
+                            await supabase
+                                .from('Vehiculos')
+                                .update({ Fecha_Anualidad: discard.Fecha_Anualidad })
+                                .eq('id', keep.id);
+                            keep.Fecha_Anualidad = discard.Fecha_Anualidad;
+                        }
+
+                        toDeleteIds.push(discard.id);
+                        seen.set(key, keep);
+                    } else {
+                        // Ambos tienen finder_id, los mantenemos ambos. 
+                        // Usamos un key diferente para que no choquen en el Map de 'seen'
+                        const uniqueKey = `${v.Usuario_ID}-${plate}-${v.finder_id}`;
+                        seen.set(uniqueKey, v);
                     }
-
-                    if (discard.Fecha_Anualidad && !keep.Fecha_Anualidad) {
-                        await supabase
-                            .from('Vehiculos')
-                            .update({ Fecha_Anualidad: discard.Fecha_Anualidad })
-                            .eq('id', keep.id);
-                        keep.Fecha_Anualidad = discard.Fecha_Anualidad;
-                    }
-
-                    toDeleteIds.push(discard.id);
-                    seen.set(key, keep);
                 } else {
                     seen.set(key, v);
                 }
@@ -192,7 +203,7 @@ export async function POST() {
         const allRemoteFinderIds = new Set(finderDevices.map(d => String(d.id_dispositivo)));
         const obsoleteIds: number[] = [];
         for (const v of allVehsForCleanup) {
-            if (v.finder_id && !allRemoteFinderIds.has(v.finder_id)) {
+            if (v.finder_id && !allRemoteFinderIds.has(String(v.finder_id))) {
                 obsoleteIds.push(v.id);
             }
         }
