@@ -256,12 +256,20 @@ export async function POST() {
             const userToClient = new Map();
             allUserLinks.forEach(u => userToClient.set(u.id, u.CLIENTE_ID));
 
-            // Conteo real por CLIENTE_ID
+            // Conteo real por CLIENTE_ID (usando platos ÚNICOS para evitar discrepancias)
             const clientCounts = new Map();
+            const seenPlates = new Set();
+            const normalize = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
             allFinalVehs.forEach(v => {
                 const clientId = userToClient.get(v.Usuario_ID);
                 if (clientId) {
-                    clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
+                    const normPlate = normalize(v.Placas);
+                    const key = `${v.Usuario_ID}-${normPlate}`;
+                    if (normPlate && !seenPlates.has(key)) {
+                        seenPlates.add(key);
+                        clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
+                    }
                 }
             });
 
