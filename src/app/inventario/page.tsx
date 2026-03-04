@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Package, Search, Plus, Cpu, Smartphone, Edit3, Loader2, X, RefreshCw, Save } from 'lucide-react';
+import { Package, Search, Plus, Cpu, Smartphone, Edit3, Loader2, X, RefreshCw, Save, Download } from 'lucide-react';
 import { format } from 'date-fns';
+import { exportToCSV } from '@/lib/exportUtils';
 
 interface GPS {
     id: string;
@@ -302,6 +303,12 @@ export default function InventarioPage() {
                             <option value="DAÑADO" className="bg-slate-900">Dañados</option>
                         </select>
                         <button
+                            onClick={() => exportToCSV(filteredGps, 'GPS_DiacorGPS')}
+                            className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                            <Download size={18} /> Exportar
+                        </button>
+                        <button
                             onClick={() => openGpsModal()}
                             className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
                         >
@@ -416,6 +423,12 @@ export default function InventarioPage() {
                             <option value="EN PLATAFORMA" className="bg-slate-900">En Plataforma</option>
                             <option value="SUSPENDIDA" className="bg-slate-900">Suspendidas</option>
                         </select>
+                        <button
+                            onClick={() => exportToCSV(filteredSims, 'SIMs_DiacorGPS')}
+                            className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2"
+                        >
+                            <Download size={18} /> Exportar
+                        </button>
                         <button
                             onClick={() => openSimModal()}
                             className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { User, Phone, Mail, Calendar, CreditCard, Search, X, ShieldCheck, Car, ChevronRight, Calculator, Save, Edit3, Loader2, Plus, Trash2, Clock, RefreshCw, FileText, Receipt, Upload, ExternalLink, Check } from 'lucide-react';
+import { User, Phone, Mail, Calendar, CreditCard, Search, X, ShieldCheck, Car, ChevronRight, Calculator, Save, Edit3, Loader2, Plus, Trash2, Clock, RefreshCw, FileText, Receipt, Upload, ExternalLink, Check, Download } from 'lucide-react';
 import { format, addMonths, isAfter, setDate, startOfToday, subMonths, eachMonthOfInterval, startOfMonth, differenceInCalendarDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { exportToCSV } from '@/lib/exportUtils';
 
 interface Cliente {
     id: number;
@@ -1134,6 +1135,13 @@ export default function ClientesPage() {
                     >
                         <RefreshCw className={`${isSyncing ? 'animate-spin' : ''}`} size={18} />
                         {isSyncing ? 'Sincronizando...' : 'Sincronizar Finder'}
+                    </button>
+                    <button
+                        onClick={() => exportToCSV(filteredClientes, 'Clientes_DiacorGPS')}
+                        className="bg-green-500/10 border border-green-500/20 px-6 py-3 rounded-2xl font-bold text-green-500 hover:bg-green-500/20 hover:text-green-400 transition-all flex items-center gap-2 whitespace-nowrap"
+                    >
+                        <Download size={18} />
+                        Exportar CSV
                     </button>
                     <button
                         onClick={handleOpenCreate}

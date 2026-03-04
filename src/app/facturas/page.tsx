@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Search, Receipt, Download, Filter, MoreVertical, Eye, CreditCard, Clock, AlertCircle, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { exportToCSV } from '@/lib/exportUtils';
 
 export default function FacturasPage() {
     const [facturas, setFacturas] = useState<any[]>([]);
@@ -291,7 +292,13 @@ export default function FacturasPage() {
                         className="w-full bg-card/50 border border-border rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                     />
                 </div>
-                <div className="relative">
+                <div className="flex gap-2 relative">
+                    <button
+                        onClick={() => exportToCSV(filteredFacturas, 'Facturas_DiacorGPS')}
+                        className="px-6 py-4 rounded-2xl flex items-center gap-2 transition-all font-bold text-sm bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400"
+                    >
+                        <Download size={18} /> Exportar CSV
+                    </button>
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`px-6 py-4 border rounded-2xl flex items-center gap-2 transition-all font-medium text-sm ${filterStatus !== 'all' ? 'bg-blue-600/10 border-blue-600 text-blue-500' : 'bg-card/50 border-border hover:bg-muted/50'}`}
