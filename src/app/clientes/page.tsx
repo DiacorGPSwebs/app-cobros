@@ -122,10 +122,12 @@ export default function ClientesPage() {
     });
 
     const [isSyncing, setIsSyncing] = useState(false);
-    const [allUnlinkedUsers, setAllUnlinkedUsers] = useState<UsuarioGPS[]>([]);
-    const [isSearchingUsers, setIsSearchingUsers] = useState(false);
     const [userSearchTerm, setUserSearchTerm] = useState('');
+    const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+    const [allUnlinkedUsers, setAllUnlinkedUsers] = useState<{ id: number; Usuario: string; CLIENTES?: { Nombre_Completo: string } | null }[]>([]);
 
+    // UI states
+    const [isGpsModalOpen, setIsGpsModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isConfirmingDeleteClient, setIsConfirmingDeleteClient] = useState(false);
     const [confirmingDeleteUsuarioId, setConfirmingDeleteUsuarioId] = useState<number | null>(null);
@@ -417,13 +419,17 @@ export default function ClientesPage() {
         try {
             const { data, error } = await supabase
                 .from('Usuarios')
-                .select('id, Usuario')
-                .is('CLIENTE_ID', null)
+                .select('id, Usuario, CLIENTES(Nombre_Completo)')
                 .ilike('Usuario', `%${queryTerm}%`)
-                .order('Usuario', { ascending: true })
-                .limit(20);
+                .order('Usuario', { ascending: true });
             if (error) throw error;
-            setAllUnlinkedUsers(data || []);
+            // Clean up the data to match the expected state type
+            const formattedData = (data || []).map((u: any) => ({
+                id: u.id,
+                Usuario: u.Usuario,
+                CLIENTES: (Array.isArray(u.CLIENTES) ? u.CLIENTES[0] : u.CLIENTES) || null
+            }));
+            setAllUnlinkedUsers(formattedData);
         } catch (err: any) {
             console.error('Error fetching unlinked users:', err.message);
         } finally {
@@ -1896,22 +1902,34 @@ export default function ClientesPage() {
                                                                 ) : allUnlinkedUsers.filter(u => u.Usuario.toLowerCase().includes(userSearchTerm.toLowerCase())).length > 0 ? (
                                                                     allUnlinkedUsers
                                                                         .filter(u => u.Usuario.toLowerCase().includes(userSearchTerm.toLowerCase()))
-                                                                        .slice(0, 10)
-                                                                        .map(u => (
-                                                                            <button
-                                                                                key={u.id}
-                                                                                onClick={() => {
-                                                                                    linkUserToCliente(u.id);
-                                                                                    setUserSearchTerm('');
-                                                                                }}
-                                                                                className="w-full text-left p-3 rounded-xl hover:bg-blue-500/20 flex justify-between items-center group transition-all"
-                                                                            >
-                                                                                <span className="font-bold text-sm tracking-wider uppercase">{u.Usuario}</span>
-                                                                                <Plus className="text-blue-400 group-hover:scale-125 transition-transform" size={16} />
-                                                                            </button>
-                                                                        ))
+                                                                        .map(u => {
+                                                                            const isLinked = u.CLIENTES && u.CLIENTES.Nombre_Completo !== null;
+                                                                            return (
+                                                                                <button
+                                                                                    key={u.id}
+                                                                                    disabled={isLinked as boolean}
+                                                                                    onClick={() => {
+                                                                                        if (!isLinked) {
+                                                                                            linkUserToCliente(u.id);
+                                                                                            setUserSearchTerm('');
+                                                                                        }
+                                                                                    }}
+                                                                                    className={`w-full text-left p-3 rounded-xl flex flex-col justify-center group transition-all ${isLinked ? 'opacity-50 cursor-not-allowed bg-white/5' : 'hover:bg-blue-500/20'}`}
+                                                                                >
+                                                                                    <div className="flex justify-between items-center w-full">
+                                                                                        <span className="font-bold text-sm tracking-wider uppercase">{u.Usuario}</span>
+                                                                                        {!isLinked && <Plus className="text-blue-400 group-hover:scale-125 transition-transform" size={16} />}
+                                                                                    </div>
+                                                                                    {isLinked && (
+                                                                                        <span className="text-[10px] text-red-400 mt-1 uppercase font-bold tracking-widest">
+                                                                                            Ya vinculado a: {u.CLIENTES?.Nombre_Completo}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </button>
+                                                                            )
+                                                                        })
                                                                 ) : (
-                                                                    <div className="text-center py-4 text-xs text-muted-foreground italic">No se encontraron usuarios disponibles.</div>
+                                                                    <p className="text-center text-sm text-muted-foreground py-4">No se encontraron usuarios</p>
                                                                 )}
                                                             </div>
                                                         )}
