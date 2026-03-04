@@ -16,7 +16,6 @@ export async function POST() {
         console.log(`Datos recibidos: ${finderUsers.length} usuarios, ${finderDevices.length} dispositivos.`);
 
         // 2. Normalización: Vincular usuarios existentes sin finder_id por nombre exacto
-        // Esto evita duplicados como el caso de ANTONIO2019
         const { data: existingNullUsers } = await supabase
             .from('Usuarios')
             .select('id, Usuario')
@@ -29,7 +28,6 @@ export async function POST() {
             for (const u of finderUsers) {
                 const existingId = nullMap.get(u.usuario.toUpperCase());
                 if (existingId) {
-                    // Vinculamos el registro existente con su ID de Finder antes del upsert masivo
                     await supabase
                         .from('Usuarios')
                         .update({ finder_id: u.id_usuario })
@@ -38,7 +36,7 @@ export async function POST() {
             }
         }
 
-        // 3. Sincronizar Usuarios (UPSERT masivo)
+        // 3. Sincronizar Usuarios
         const usersToUpsert = finderUsers.map(u => ({
             finder_id: u.id_usuario,
             Usuario: u.usuario,
@@ -52,7 +50,7 @@ export async function POST() {
             if (uError) throw uError;
         }
 
-        // 4. Obtener mapeo actualizado de finder_id -> internal_id para Vehículos
+        // 4. Obtener mapeo finder_id -> internal_id
         console.log('--- Obteniendo mapeo de usuarios internos ---');
         let internalUsers: any[] = [];
         let hasMore = true;
@@ -75,23 +73,19 @@ export async function POST() {
             }
         }
 
-        console.log(`Mapeo listo: ${internalUsers.length} usuarios indexados.`);
-
         const userMap = new Map();
         internalUsers?.forEach(u => userMap.set(u.finder_id, u.id));
 
-        // 5. Normalización de Vehículos: Vincular vehículos manuales sin finder_id
+        // 5. Normalización de Vehículos: Vincular manuales
         console.log('--- Normalizando vehículos manuales ---');
         const { data: existingNullVehicles } = await supabase
             .from('Vehiculos')
             .select('id, Placas, Usuario_ID')
             .is('finder_id', null);
 
-        if (existingNullVehicles && existingNullVehicles.length > 0) {
-            // Helper to normalize plates for matching (remove spaces, hyphens, etc)
-            const normalizePlate = (p: string) => p.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        const normalizePlate = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
-            // Create a map of "Usuario_ID-NormalizedPlaca" -> id
+        if (existingNullVehicles && existingNullVehicles.length > 0) {
             const nullVehMap = new Map();
             existingNullVehicles.forEach(v => {
                 if (v.Placas && v.Usuario_ID) {
@@ -108,8 +102,6 @@ export async function POST() {
                 if (internalUserId && normPlaca) {
                     const existingVehId = nullVehMap.get(`${internalUserId}-${normPlaca}`);
                     if (existingVehId) {
-                        // Vinculamos el vehículo manual existente con su ID de Finder
-                        console.log(`Vinculando vehículo manual ${existingVehId} con finder_id ${d.id_dispositivo}`);
                         await supabase
                             .from('Vehiculos')
                             .update({ finder_id: d.id_dispositivo })
@@ -119,12 +111,10 @@ export async function POST() {
             }
         }
 
-        // 6. Sincronizar Vehículos con detección inteligente de placas
+        // 6. Sincronizar Vehículos
         const devicesToUpsert = finderDevices.map(d => ({
             finder_id: d.id_dispositivo,
-            // Si la placa está vacía, usamos el nombre del dispositivo (Vehicle ID/Name)
             Placas: d.placa && d.placa.trim() !== '' ? d.placa.trim() : (d.nombre || 'S/N'),
-            // Usamos String() para asegurar que el mapeo funcione independientemente del tipo (string vs number)
             Usuario_ID: userMap.get(String(d.id_usuario)) || null,
         }));
 
@@ -136,9 +126,8 @@ export async function POST() {
             if (vError) throw vError;
         }
 
-        // 7. LIMPIEZA DE DUPLICADOS: Eliminar registros residuales y fusionar datos manuales
-        console.log('--- Limpiando duplicados y fusionando datos ---');
-
+        // 7. LIMPIEZA DE DUPLICADOS Y OBSOLETOS
+        console.log('--- Limpiando duplicados y obsoletos ---');
         let allVehsForCleanup: any[] = [];
         let vHasMore = true;
         let vOffset = 0;
@@ -149,7 +138,6 @@ export async function POST() {
                 .from('Vehiculos')
                 .select('id, Placas, finder_id, Usuario_ID, Fecha_Anualidad')
                 .range(vOffset, vOffset + V_PAGE_SIZE - 1);
-
             if (vFetchError) throw vFetchError;
             if (vPage && vPage.length > 0) {
                 allVehsForCleanup = [...allVehsForCleanup, ...vPage];
@@ -160,10 +148,7 @@ export async function POST() {
             }
         }
 
-        console.log(`Analizando ${allVehsForCleanup.length} vehículos para limpieza.`);
-
         if (allVehsForCleanup.length > 0) {
-            const normalizePlate = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
             const seen = new Map();
             const toDeleteIds: number[] = [];
 
@@ -173,8 +158,6 @@ export async function POST() {
 
                 if (seen.has(key)) {
                     const existing = seen.get(key);
-
-                    // Decidir cuál conservar: Preferimos el que tiene finder_id
                     let keep = existing;
                     let discard = v;
 
@@ -183,8 +166,6 @@ export async function POST() {
                         discard = existing;
                     }
 
-                    // Si el descartado tiene fecha de anualidad y el que conservamos NO, 
-                    // actualizamos el conservado para no perder el dato manual.
                     if (discard.Fecha_Anualidad && !keep.Fecha_Anualidad) {
                         await supabase
                             .from('Vehiculos')
@@ -201,96 +182,87 @@ export async function POST() {
             }
 
             if (toDeleteIds.length > 0) {
-                console.log(`Eliminando ${toDeleteIds.length} duplicados residuales.`);
                 for (let i = 0; i < toDeleteIds.length; i += 100) {
-                    const chunk = toDeleteIds.slice(i, i + 100);
-                    await supabase.from('Vehiculos').delete().in('id', chunk);
+                    await supabase.from('Vehiculos').delete().in('id', toDeleteIds.slice(i, i + 100));
                 }
             }
         }
 
-        // 8. RECALCULAR CANTIDADES DE VEHÍCULOS PARA TODOS LOS CLIENTES
-        console.log('--- Recalculando Cantidades de Vehículos ---');
+        // 7.1 Limpiar obsoletos (no en Finder)
+        const allRemoteFinderIds = new Set(finderDevices.map(d => String(d.id_dispositivo)));
+        const obsoleteIds: number[] = [];
+        for (const v of allVehsForCleanup) {
+            if (v.finder_id && !allRemoteFinderIds.has(v.finder_id)) {
+                obsoleteIds.push(v.id);
+            }
+        }
+        if (obsoleteIds.length > 0) {
+            for (let i = 0; i < obsoleteIds.length; i += 100) {
+                await supabase.from('Vehiculos').delete().in('id', obsoleteIds.slice(i, i + 100));
+            }
+        }
 
-        // 8.1 Obtener todos los vehículos con su Usuario_ID (Paginado)
-        let allFinalVehs: any[] = [];
-        let fvHasMore = true;
+        // 8. RECALCULAR CANTIDADES
+        console.log('--- Recalculando Cantidades ---');
+
+        // Refetch vehicles after cleanup
+        let finalVehs: any[] = [];
         let fvOffset = 0;
+        let fvHasMore = true;
         while (fvHasMore) {
-            const { data: fvPage, error: fvError } = await supabase
-                .from('Vehiculos')
-                .select('Usuario_ID')
-                .range(fvOffset, fvOffset + 1000 - 1);
-            if (fvError) throw fvError;
-            if (fvPage && fvPage.length > 0) {
-                allFinalVehs = [...allFinalVehs, ...fvPage];
+            const { data: page, error } = await supabase.from('Vehiculos').select('Usuario_ID, Placas').range(fvOffset, fvOffset + 1000 - 1);
+            if (error) throw error;
+            if (page && page.length > 0) {
+                finalVehs = [...finalVehs, ...page];
                 fvOffset += 1000;
-                fvHasMore = fvPage.length === 1000;
+                fvHasMore = page.length === 1000;
             } else {
                 fvHasMore = false;
             }
         }
 
-        // 8.2 Obtener todos los usuarios vinculados a clientes (Paginado)
-        let allUserLinks: any[] = [];
-        let ulHasMore = true;
+        let userLinks: any[] = [];
         let ulOffset = 0;
+        let ulHasMore = true;
         while (ulHasMore) {
-            const { data: ulPage, error: ulError } = await supabase
-                .from('Usuarios')
-                .select('id, CLIENTE_ID')
-                .not('CLIENTE_ID', 'is', null)
-                .range(ulOffset, ulOffset + 1000 - 1);
-            if (ulError) throw ulError;
-            if (ulPage && ulPage.length > 0) {
-                allUserLinks = [...allUserLinks, ...ulPage];
+            const { data: page, error } = await supabase.from('Usuarios').select('id, CLIENTE_ID').not('CLIENTE_ID', 'is', null).range(ulOffset, ulOffset + 1000 - 1);
+            if (error) throw error;
+            if (page && page.length > 0) {
+                userLinks = [...userLinks, ...page];
                 ulOffset += 1000;
-                ulHasMore = ulPage.length === 1000;
+                ulHasMore = page.length === 1000;
             } else {
                 ulHasMore = false;
             }
         }
 
-        if (allFinalVehs.length > 0 && allUserLinks.length > 0) {
-            // Mapeo Usuario_ID -> CLIENTE_ID
-            const userToClient = new Map();
-            allUserLinks.forEach(u => userToClient.set(u.id, u.CLIENTE_ID));
+        if (finalVehs.length > 0 && userLinks.length > 0) {
+            const uToC = new Map();
+            userLinks.forEach(u => uToC.set(u.id, u.CLIENTE_ID));
 
-            // Conteo real por CLIENTE_ID (usando platos ÚNICOS para evitar discrepancias)
             const clientCounts = new Map();
             const seenPlates = new Set();
-            const normalize = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
-            allFinalVehs.forEach(v => {
-                const clientId = userToClient.get(v.Usuario_ID);
+            finalVehs.forEach(v => {
+                const clientId = uToC.get(v.Usuario_ID);
                 if (clientId) {
-                    const normPlate = normalize(v.Placas);
-                    const key = `${v.Usuario_ID}-${normPlate}`;
-                    if (normPlate && !seenPlates.has(key)) {
+                    const norm = normalizePlate(v.Placas);
+                    const key = `${v.Usuario_ID}-${norm}`;
+                    if (norm && !seenPlates.has(key)) {
                         seenPlates.add(key);
                         clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
                     }
                 }
             });
 
-            // Actualizar cada cliente con el conteo real
-            const { data: allClients } = await supabase.from('CLIENTES').select('id');
-            for (const c of allClients || []) {
+            const { data: clients } = await supabase.from('CLIENTES').select('id');
+            for (const c of clients || []) {
                 const total = clientCounts.get(c.id) || 0;
-                await supabase
-                    .from('CLIENTES')
-                    .update({ Cantidad_Vehiculo: total })
-                    .eq('id', c.id);
+                await supabase.from('CLIENTES').update({ Cantidad_Vehiculo: total }).eq('id', c.id);
             }
         }
 
-        return NextResponse.json({
-            success: true,
-            summary: {
-                users: finderUsers.length,
-                devices: finderDevices.length
-            }
-        });
+        return NextResponse.json({ success: true, summary: { users: finderUsers.length, devices: finderDevices.length } });
 
     } catch (error: any) {
         console.error('Error en sincronización:', error);
