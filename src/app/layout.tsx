@@ -11,6 +11,7 @@ export const metadata: Metadata = {
 };
 
 import Sidebar from "@/components/Sidebar";
+import { AuthProvider } from "@/components/AuthProvider";
 
 export default function RootLayout({
   children,
@@ -25,18 +26,20 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="antialiased min-h-screen">
-        <div className="flex min-h-screen bg-background">
-          <Sidebar />
+        <AuthProvider>
+          <div className="flex min-h-screen bg-background">
+            <Sidebar />
 
-          <main className="flex-1 flex flex-col">
-            <header className="h-16 border-b border-border flex items-center px-8 bg-card/30 backdrop-blur-sm">
-              <h2 className="text-lg font-semibold">Panel de Control</h2>
-            </header>
-            <div className="p-8">
-              {children}
-            </div>
-          </main>
-        </div>
+            <main className="flex-1 flex flex-col">
+              <header className="h-16 border-b border-border flex items-center px-8 bg-card/30 backdrop-blur-sm">
+                <h2 className="text-lg font-semibold">Panel de Control</h2>
+              </header>
+              <div className="p-8">
+                {children}
+              </div>
+            </main>
+          </div>
+        </AuthProvider>
       </body>
     </html>
   );

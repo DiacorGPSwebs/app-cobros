@@ -2,11 +2,23 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
-import { Search, FileText, Receipt, LayoutDashboard, Users, UserCircle, Package } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Search, FileText, Receipt, LayoutDashboard, Users, UserCircle, Package, LogOut } from 'lucide-react';
+import { useAuth } from './AuthProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const { user } = useAuth();
+
+    // Hide sidebar on login page
+    if (pathname === '/login') return null;
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push('/login');
+    };
 
     const menuItems = [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -70,14 +82,21 @@ export default function Sidebar() {
             </nav>
 
             <div className="p-4 border-t border-border/50 bg-muted/10">
-                <div className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border shadow-sm">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border shadow-sm group">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
                         <UserCircle size={24} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate">Admin User</p>
+                        <p className="text-sm font-bold truncate text-white">{user?.email || 'Admin User'}</p>
                         <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Cobros</p>
                     </div>
+                    <button
+                        onClick={handleLogout}
+                        className="p-2 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                        title="Cerrar Sesión"
+                    >
+                        <LogOut size={16} />
+                    </button>
                 </div>
             </div>
         </aside>
