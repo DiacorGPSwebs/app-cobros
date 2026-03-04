@@ -241,17 +241,11 @@ export async function POST() {
             userLinks.forEach(u => uToC.set(u.id, u.CLIENTE_ID));
 
             const clientCounts = new Map();
-            const seenPlates = new Set();
 
             finalVehs.forEach(v => {
                 const clientId = uToC.get(v.Usuario_ID);
                 if (clientId) {
-                    const norm = normalizePlate(v.Placas);
-                    const key = `${v.Usuario_ID}-${norm}`;
-                    if (norm && !seenPlates.has(key)) {
-                        seenPlates.add(key);
-                        clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
-                    }
+                    clientCounts.set(clientId, (clientCounts.get(clientId) || 0) + 1);
                 }
             });
 
