@@ -80,7 +80,46 @@ export async function POST() {
         const userMap = new Map();
         internalUsers?.forEach(u => userMap.set(u.finder_id, u.id));
 
-        // 5. Sincronizar Vehículos con detección inteligente de placas
+        // 5. Normalización de Vehículos: Vincular vehículos manuales sin finder_id
+        console.log('--- Normalizando vehículos manuales ---');
+        const { data: existingNullVehicles } = await supabase
+            .from('Vehiculos')
+            .select('id, Placas, Usuario_ID')
+            .is('finder_id', null);
+
+        if (existingNullVehicles && existingNullVehicles.length > 0) {
+            // Helper to normalize plates for matching (remove spaces, hyphens, etc)
+            const normalizePlate = (p: string) => p.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+            // Create a map of "Usuario_ID-NormalizedPlaca" -> id
+            const nullVehMap = new Map();
+            existingNullVehicles.forEach(v => {
+                if (v.Placas && v.Usuario_ID) {
+                    const norm = normalizePlate(v.Placas);
+                    if (norm) nullVehMap.set(`${v.Usuario_ID}-${norm}`, v.id);
+                }
+            });
+
+            for (const d of finderDevices) {
+                const internalUserId = userMap.get(String(d.id_usuario));
+                const rawPlaca = d.placa && d.placa.trim() !== '' ? d.placa : (d.nombre || '');
+                const normPlaca = normalizePlate(rawPlaca);
+
+                if (internalUserId && normPlaca) {
+                    const existingVehId = nullVehMap.get(`${internalUserId}-${normPlaca}`);
+                    if (existingVehId) {
+                        // Vinculamos el vehículo manual existente con su ID de Finder
+                        console.log(`Vinculando vehículo manual ${existingVehId} con finder_id ${d.id_dispositivo}`);
+                        await supabase
+                            .from('Vehiculos')
+                            .update({ finder_id: d.id_dispositivo })
+                            .eq('id', existingVehId);
+                    }
+                }
+            }
+        }
+
+        // 6. Sincronizar Vehículos con detección inteligente de placas
         const devicesToUpsert = finderDevices.map(d => ({
             finder_id: d.id_dispositivo,
             // Si la placa está vacía, usamos el nombre del dispositivo (Vehicle ID/Name)
@@ -97,7 +136,57 @@ export async function POST() {
             if (vError) throw vError;
         }
 
-        // 6. RECALCULAR CANTIDADES DE VEHÍCULOS PARA TODOS LOS CLIENTES
+        // 7. LIMPIEZA DE DUPLICADOS: Eliminar registros residuales y fusionar datos manuales
+        console.log('--- Limpiando duplicados y fusionando datos ---');
+        const { data: finalVehs } = await supabase.from('Vehiculos').select('id, Placas, finder_id, Usuario_ID, Fecha_Anualidad');
+        if (finalVehs) {
+            const normalizePlate = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            const seen = new Map();
+            const toDeleteIds: number[] = [];
+
+            for (const v of finalVehs) {
+                if (!v.Placas || !v.Usuario_ID) continue;
+                const key = `${v.Usuario_ID}-${normalizePlate(v.Placas)}`;
+
+                if (seen.has(key)) {
+                    const existing = seen.get(key);
+
+                    // Decidir cuál conservar: Preferimos el que tiene finder_id
+                    let keep = existing;
+                    let discard = v;
+
+                    if (v.finder_id && !existing.finder_id) {
+                        keep = v;
+                        discard = existing;
+                    }
+
+                    // Si el descartado tiene fecha de anualidad y el que conservamos NO, 
+                    // actualizamos el conservado para no perder el dato manual.
+                    if (discard.Fecha_Anualidad && !keep.Fecha_Anualidad) {
+                        await supabase
+                            .from('Vehiculos')
+                            .update({ Fecha_Anualidad: discard.Fecha_Anualidad })
+                            .eq('id', keep.id);
+                        keep.Fecha_Anualidad = discard.Fecha_Anualidad;
+                    }
+
+                    toDeleteIds.push(discard.id);
+                    seen.set(key, keep);
+                } else {
+                    seen.set(key, v);
+                }
+            }
+
+            if (toDeleteIds.length > 0) {
+                console.log(`Eliminando ${toDeleteIds.length} duplicados.`);
+                for (let i = 0; i < toDeleteIds.length; i += 100) {
+                    const chunk = toDeleteIds.slice(i, i + 100);
+                    await supabase.from('Vehiculos').delete().in('id', chunk);
+                }
+            }
+        }
+
+        // 8. RECALCULAR CANTIDADES DE VEHÍCULOS PARA TODOS LOS CLIENTES
         console.log('--- Recalculando Cantidades de Vehículos ---');
 
         // Obtenemos todos los vínculos actuales Clientes -> Usuarios -> Vehículos
