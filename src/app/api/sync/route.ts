@@ -138,13 +138,36 @@ export async function POST() {
 
         // 7. LIMPIEZA DE DUPLICADOS: Eliminar registros residuales y fusionar datos manuales
         console.log('--- Limpiando duplicados y fusionando datos ---');
-        const { data: finalVehs } = await supabase.from('Vehiculos').select('id, Placas, finder_id, Usuario_ID, Fecha_Anualidad');
-        if (finalVehs) {
+
+        let allVehsForCleanup: any[] = [];
+        let vHasMore = true;
+        let vOffset = 0;
+        const V_PAGE_SIZE = 1000;
+
+        while (vHasMore) {
+            const { data: vPage, error: vFetchError } = await supabase
+                .from('Vehiculos')
+                .select('id, Placas, finder_id, Usuario_ID, Fecha_Anualidad')
+                .range(vOffset, vOffset + V_PAGE_SIZE - 1);
+
+            if (vFetchError) throw vFetchError;
+            if (vPage && vPage.length > 0) {
+                allVehsForCleanup = [...allVehsForCleanup, ...vPage];
+                vOffset += V_PAGE_SIZE;
+                vHasMore = vPage.length === V_PAGE_SIZE;
+            } else {
+                vHasMore = false;
+            }
+        }
+
+        console.log(`Analizando ${allVehsForCleanup.length} vehículos para limpieza.`);
+
+        if (allVehsForCleanup.length > 0) {
             const normalizePlate = (p: string) => String(p || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
             const seen = new Map();
             const toDeleteIds: number[] = [];
 
-            for (const v of finalVehs) {
+            for (const v of allVehsForCleanup) {
                 if (!v.Placas || !v.Usuario_ID) continue;
                 const key = `${v.Usuario_ID}-${normalizePlate(v.Placas)}`;
 
@@ -178,7 +201,7 @@ export async function POST() {
             }
 
             if (toDeleteIds.length > 0) {
-                console.log(`Eliminando ${toDeleteIds.length} duplicados.`);
+                console.log(`Eliminando ${toDeleteIds.length} duplicados residuales.`);
                 for (let i = 0; i < toDeleteIds.length; i += 100) {
                     const chunk = toDeleteIds.slice(i, i + 100);
                     await supabase.from('Vehiculos').delete().in('id', chunk);
