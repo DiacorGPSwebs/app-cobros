@@ -281,8 +281,8 @@ export default function FacturasPage() {
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 text-left">
-                <div className="flex-1 relative">
+            <div className="flex flex-col md:flex-row flex-wrap gap-4 text-left">
+                <div className="flex-1 min-w-[280px] relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
                     <input
                         type="text"
@@ -292,10 +292,10 @@ export default function FacturasPage() {
                         className="w-full bg-card/50 border border-border rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                     />
                 </div>
-                <div className="flex gap-2 relative">
+                <div className="flex flex-wrap gap-2 relative">
                     <button
                         onClick={() => exportToCSV(filteredFacturas, 'Facturas_DiacorGPS')}
-                        className="px-6 py-4 rounded-2xl flex items-center gap-2 transition-all font-bold text-sm bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400"
+                        className="px-6 py-4 rounded-2xl flex items-center gap-2 transition-all font-bold text-sm bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 whitespace-nowrap"
                     >
                         <Download size={18} /> Exportar CSV
                     </button>

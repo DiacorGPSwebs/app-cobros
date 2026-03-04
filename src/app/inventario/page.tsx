@@ -281,8 +281,8 @@ export default function InventarioPage() {
                     </div>
 
                     {/* FILTERS GPS */}
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="relative flex-1 group">
+                    <div className="flex flex-col md:flex-row flex-wrap gap-4">
+                        <div className="relative flex-1 min-w-[280px] group">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" size={18} />
                             <input
                                 type="text"
@@ -302,18 +302,20 @@ export default function InventarioPage() {
                             <option value="EN PLATAFORMA" className="bg-slate-900">En Plataforma</option>
                             <option value="DAÑADO" className="bg-slate-900">Dañados</option>
                         </select>
-                        <button
-                            onClick={() => exportToCSV(filteredGps, 'GPS_DiacorGPS')}
-                            className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2"
-                        >
-                            <Download size={18} /> Exportar
-                        </button>
-                        <button
-                            onClick={() => openGpsModal()}
-                            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
-                        >
-                            <Plus size={18} /> Agregar GPS
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => exportToCSV(filteredGps, 'GPS_DiacorGPS')}
+                                className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+                            >
+                                <Download size={18} /> Exportar
+                            </button>
+                            <button
+                                onClick={() => openGpsModal()}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 whitespace-nowrap"
+                            >
+                                <Plus size={18} /> Agregar GPS
+                            </button>
+                        </div>
                     </div>
 
                     {/* TABLE GPS */}
@@ -392,8 +394,8 @@ export default function InventarioPage() {
                     </div>
 
                     {/* FILTERS SIM */}
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="relative flex-1 group">
+                    <div className="flex flex-col md:flex-row flex-wrap gap-4">
+                        <div className="relative flex-1 min-w-[280px] group">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground group-focus-within:text-primary transition-colors" size={18} />
                             <input
                                 type="text"
@@ -423,18 +425,20 @@ export default function InventarioPage() {
                             <option value="EN PLATAFORMA" className="bg-slate-900">En Plataforma</option>
                             <option value="SUSPENDIDA" className="bg-slate-900">Suspendidas</option>
                         </select>
-                        <button
-                            onClick={() => exportToCSV(filteredSims, 'SIMs_DiacorGPS')}
-                            className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2"
-                        >
-                            <Download size={18} /> Exportar
-                        </button>
-                        <button
-                            onClick={() => openSimModal()}
-                            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
-                        >
-                            <Plus size={18} /> Agregar SIM
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => exportToCSV(filteredSims, 'SIMs_DiacorGPS')}
+                                className="bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 hover:text-green-400 px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+                            >
+                                <Download size={18} /> Exportar
+                            </button>
+                            <button
+                                onClick={() => openSimModal()}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 whitespace-nowrap"
+                            >
+                                <Plus size={18} /> Agregar SIM
+                            </button>
+                        </div>
                     </div>
 
                     {/* TABLE SIM */}
