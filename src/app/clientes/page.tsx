@@ -22,6 +22,7 @@ interface Cliente {
     tiene_mora?: boolean;
     proxima_anualidad?: string | null;
     dias_para_anualidad?: number | null;
+    Usuarios_Plataforma?: string;
 }
 
 interface UsuarioGPS {
@@ -135,6 +136,8 @@ export default function ClientesPage() {
     const [confirmingDeleteInvoiceId, setConfirmingDeleteInvoiceId] = useState<string | null>(null);
     const [confirmingDeleteCotizacionId, setConfirmingDeleteCotizacionId] = useState<string | null>(null);
     const [confirmingDeleteCobroId, setConfirmingDeleteCobroId] = useState<string | null>(null);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
 
     useEffect(() => {
         fetchClientes();
@@ -249,7 +252,7 @@ export default function ClientesPage() {
             // Fetch all invoices to calculate debt per client
             const { data: allInvoices } = await supabase.from('Facturas').select('id, cliente_id, monto_total, fecha_emision, estado');
             const { data: allPayments } = await supabase.from('Cobros').select('monto_pagado, factura_id');
-            const { data: allUsers } = await supabase.from('Usuarios').select('id, CLIENTE_ID');
+            const { data: allUsers } = await supabase.from('Usuarios').select('id, Usuario, CLIENTE_ID');
             const { data: allVehicles } = await supabase.from('Vehiculos').select('id, Usuario_ID, Fecha_Anualidad');
 
             const clientesConDeuda = (data || []).map(c => {
@@ -296,7 +299,10 @@ export default function ClientesPage() {
                     }
                 }
 
-                return { ...c, total_deuda: totalDeuda, tiene_mora: tieneMora, proxima_anualidad, dias_para_anualidad };
+                const clientUsers = (allUsers || []).filter(u => u.CLIENTE_ID === c.id);
+                const usuarios_plataforma = clientUsers.map(u => u.Usuario).join('; ');
+
+                return { ...c, total_deuda: totalDeuda, tiene_mora: tieneMora, proxima_anualidad, dias_para_anualidad, Usuarios_Plataforma: usuarios_plataforma };
             });
 
             setClientes(clientesConDeuda);
@@ -1066,6 +1072,59 @@ export default function ClientesPage() {
         setEditVehiculos(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
     };
 
+    const handleImportCSV = async (file: File) => {
+        setIsImporting(true);
+        try {
+            const text = await file.text();
+            const lines = text.split('\n');
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const dataRows = lines.slice(1).filter(l => l.trim() !== '');
+
+            const clientsToUpsert = dataRows.map(line => {
+                const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                const row: any = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index];
+                });
+
+                // Map CSV headers to DB columns and clean data
+                return {
+                    Nombre_Completo: row.Nombre_Completo || row.Nombre || '',
+                    Telefono: row.Telefono || '',
+                    Correo: row.Correo || row.Email || '',
+                    Tarifa: parseFloat(row.Tarifa) || 0,
+                    Plan: row.Plan || 'Mensualidad',
+                    Dia_De_Pago: parseInt(row.Dia_De_Pago) || 1,
+                    Requiere_Factura: row.Requiere_Factura?.toLowerCase() === 'true' || row.Requiere_Factura === '1',
+                    Fecha_Ultimo_Pago: row.Fecha_Ultimo_Pago || format(new Date(), 'yyyy-MM-dd')
+                };
+            }).filter(c => c.Nombre_Completo !== '');
+
+            if (clientsToUpsert.length === 0) {
+                alert('No se encontraron datos válidos en el CSV');
+                return;
+            }
+
+            // Perform upsert (using Nombre_Completo as a simple match criteria for now, 
+            // though actual upsert would ideally use ID if available in export)
+            for (const client of clientsToUpsert) {
+                const { error } = await supabase
+                    .from('CLIENTES')
+                    .upsert(client, { onConflict: 'Nombre_Completo' });
+                if (error) throw error;
+            }
+
+            alert(`Importación exitosa: ${clientsToUpsert.length} clientes procesados.`);
+            setIsImportModalOpen(false);
+            fetchClientes();
+        } catch (err: any) {
+            console.error('Error importing CSV:', err);
+            alert('Error al importar CSV: ' + err.message);
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
     const filteredClientes = clientes.filter(c => {
         const matchesSearch = c.Nombre_Completo.toLowerCase().includes(searchTerm.toLowerCase()) ||
             c.Telefono?.includes(searchTerm) ||
@@ -1148,6 +1207,13 @@ export default function ClientesPage() {
                     >
                         <Download size={18} />
                         Exportar CSV
+                    </button>
+                    <button
+                        onClick={() => setIsImportModalOpen(true)}
+                        className="bg-blue-500/10 border border-blue-500/20 px-6 py-3 rounded-2xl font-bold text-blue-500 hover:bg-blue-500/20 hover:text-blue-400 transition-all flex items-center gap-2 whitespace-nowrap"
+                    >
+                        <Upload size={18} />
+                        Importar CSV
                     </button>
                     <button
                         onClick={handleOpenCreate}
@@ -2552,6 +2618,87 @@ export default function ClientesPage() {
                 </div >
             )
             }
+
+            {/* Modal de Importación CSV */}
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-card w-full max-w-xl rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                        <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <div>
+                                <h2 className="text-2xl font-black text-white">Importar Clientes</h2>
+                                <p className="text-muted-foreground text-sm">Carga masiva de datos desde un archivo CSV.</p>
+                            </div>
+                            <button onClick={() => setIsImportModalOpen(false)} className="bg-white/5 p-2 rounded-xl hover:bg-white/10 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="p-8 space-y-6">
+                            <div className="bg-blue-500/10 border border-blue-500/20 p-6 rounded-2xl flex items-start gap-4">
+                                <div className="bg-blue-500 p-3 rounded-xl shadow-lg shadow-blue-500/40">
+                                    <FileText size={24} className="text-white" />
+                                </div>
+                                <div>
+                                    <h4 className="font-bold text-white mb-1">Formato requerido</h4>
+                                    <p className="text-sm text-blue-200/70 leading-relaxed">
+                                        El archivo debe ser un CSV con las cabeceras: 
+                                        <code className="mx-2 px-2 py-0.5 bg-blue-500/20 rounded-lg text-blue-300">Nombre_Completo, Telefono, Correo, Tarifa, Plan, Dia_De_Pago</code>
+                                    </p>
+                                    <button 
+                                        onClick={() => {
+                                            const template = "Nombre_Completo,Telefono,Correo,Tarifa,Plan,Dia_De_Pago,Requiere_Factura,Fecha_Ultimo_Pago\nEjemplo Cliente,+507 0000-0000,ejemplo@correo.com,15.00,Mensualidad,1,false,2024-01-01";
+                                            const blob = new Blob([template], { type: 'text/csv' });
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'plantilla_clientes.csv';
+                                            a.click();
+                                        }}
+                                        className="mt-4 text-sm font-bold text-blue-400 hover:text-blue-300 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Download size={14} /> Descargar Plantilla
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="relative">
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleImportCSV(file);
+                                    }}
+                                    disabled={isImporting}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                                />
+                                <div className="border-2 border-dashed border-white/10 rounded-3xl p-12 flex flex-col items-center justify-center gap-4 hover:border-blue-500/40 hover:bg-white/5 transition-all text-center group">
+                                    {isImporting ? (
+                                        <Loader2 className="animate-spin text-primary" size={48} />
+                                    ) : (
+                                        <Upload className="text-muted-foreground group-hover:text-primary transition-colors" size={48} />
+                                    )}
+                                    <div className="space-y-1">
+                                        <p className="text-lg font-bold text-white">
+                                            {isImporting ? 'Procesando archivo...' : 'Haz clic o arrastra un archivo CSV'}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">Soporte para archivos .csv hasta 10MB</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 bg-white/5 border-t border-white/5 flex justify-end">
+                            <button
+                                onClick={() => setIsImportModalOpen(false)}
+                                className="px-6 py-3 rounded-2xl font-bold bg-white/5 hover:bg-white/10 transition-all text-white"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Estilos scrollbar */}
             <style jsx global>{`
