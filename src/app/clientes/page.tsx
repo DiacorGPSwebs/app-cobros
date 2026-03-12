@@ -249,11 +249,46 @@ export default function ClientesPage() {
                 .order('Nombre_Completo', { ascending: true });
             if (error) throw error;
 
-            // Fetch all invoices to calculate debt per client
-            const { data: allInvoices } = await supabase.from('Facturas').select('id, cliente_id, monto_total, fecha_emision, estado');
-            const { data: allPayments } = await supabase.from('Cobros').select('monto_pagado, factura_id');
-            const { data: allUsers } = await supabase.from('Usuarios').select('id, Usuario, CLIENTE_ID');
-            const { data: allVehicles } = await supabase.from('Vehiculos').select('id, Usuario_ID, Fecha_Anualidad');
+            // Fetch all invoices to calculate debt per client (paginated)
+            let allInvoices: any[] = [];
+            let iOffset = 0;
+            while (true) {
+                const { data: iPage } = await supabase.from('Facturas').select('id, cliente_id, monto_total, fecha_emision, estado').range(iOffset, iOffset + 999);
+                if (iPage && iPage.length > 0) {
+                    allInvoices = [...allInvoices, ...iPage];
+                    iOffset += 1000;
+                } else break;
+            }
+
+            let allPayments: any[] = [];
+            let pOffset = 0;
+            while (true) {
+                const { data: pPage } = await supabase.from('Cobros').select('monto_pagado, factura_id').range(pOffset, pOffset + 999);
+                if (pPage && pPage.length > 0) {
+                    allPayments = [...allPayments, ...pPage];
+                    pOffset += 1000;
+                } else break;
+            }
+
+            let allUsers: any[] = [];
+            let uOffset = 0;
+            while (true) {
+                const { data: uPage } = await supabase.from('Usuarios').select('id, Usuario, CLIENTE_ID').range(uOffset, uOffset + 999);
+                if (uPage && uPage.length > 0) {
+                    allUsers = [...allUsers, ...uPage];
+                    uOffset += 1000;
+                } else break;
+            }
+
+            let allVehicles: any[] = [];
+            let vOffset = 0;
+            while (true) {
+                const { data: vPage } = await supabase.from('Vehiculos').select('id, Usuario_ID, Fecha_Anualidad').range(vOffset, vOffset + 999);
+                if (vPage && vPage.length > 0) {
+                    allVehicles = [...allVehicles, ...vPage];
+                    vOffset += 1000;
+                } else break;
+            }
 
             const clientesConDeuda = (data || []).map(c => {
                 const clientInvoices = (allInvoices || []).filter(f => f.cliente_id === c.id);
