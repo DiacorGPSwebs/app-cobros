@@ -1115,15 +1115,23 @@ export default function ClientesPage() {
             const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
             const dataRows = lines.slice(1).filter(l => l.trim() !== '');
 
-            const clientsToUpsert = dataRows.map(line => {
+            const parsedRows = dataRows.map(line => {
                 const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
                 const row: any = {};
                 headers.forEach((header, index) => {
                     row[header] = values[index];
                 });
+                return row;
+            });
 
-                // Map CSV headers to DB columns and clean data
-                return {
+            if (parsedRows.length === 0) {
+                alert('No se encontraron datos válidos en el CSV');
+                return;
+            }
+
+            let processedCount = 0;
+            for (const row of parsedRows) {
+                const clientData = {
                     Nombre_Completo: row.Nombre_Completo || row.Nombre || '',
                     Telefono: row.Telefono || '',
                     Correo: row.Correo || row.Email || '',
@@ -1131,25 +1139,40 @@ export default function ClientesPage() {
                     Plan: row.Plan || 'Mensualidad',
                     Dia_De_Pago: parseInt(row.Dia_De_Pago) || 1,
                     Requiere_Factura: row.Requiere_Factura?.toLowerCase() === 'true' || row.Requiere_Factura === '1',
-                    Fecha_Ultimo_Pago: row.Fecha_Ultimo_Pago || format(new Date(), 'yyyy-MM-dd')
+                    Fecha_Ultimo_Pago: (row.Fecha_Ultimo_Pago && row.Fecha_Ultimo_Pago !== 'null') ? row.Fecha_Ultimo_Pago : format(new Date(), 'yyyy-MM-dd')
                 };
-            }).filter(c => c.Nombre_Completo !== '');
 
-            if (clientsToUpsert.length === 0) {
-                alert('No se encontraron datos válidos en el CSV');
-                return;
-            }
+                if (!clientData.Nombre_Completo) continue;
 
-            // Perform upsert (using Nombre_Completo as a simple match criteria for now, 
-            // though actual upsert would ideally use ID if available in export)
-            for (const client of clientsToUpsert) {
-                const { error } = await supabase
+                // Perform upsert and get ID
+                const { data: upserted, error: cError } = await supabase
                     .from('CLIENTES')
-                    .upsert(client, { onConflict: 'Nombre_Completo' });
-                if (error) throw error;
+                    .upsert(clientData, { onConflict: 'Nombre_Completo' })
+                    .select('id')
+                    .single();
+
+                if (cError) throw cError;
+
+                const clientId = upserted.id;
+                const usuariosPlataformaStr = row.Usuarios_Plataforma || '';
+
+                if (usuariosPlataformaStr && usuariosPlataformaStr !== 'null') {
+                    const userNames = usuariosPlataformaStr.split(';').map((u: string) => u.trim()).filter((u: string) => u !== '');
+                    if (userNames.length > 0) {
+                        const { error: uError } = await supabase
+                            .from('Usuarios')
+                            .update({ CLIENTE_ID: clientId })
+                            .in('Usuario', userNames);
+                        
+                        if (uError) {
+                            console.warn(`Error linking users for ${clientData.Nombre_Completo}:`, uError);
+                        }
+                    }
+                }
+                processedCount++;
             }
 
-            alert(`Importación exitosa: ${clientsToUpsert.length} clientes procesados.`);
+            alert(`Importación exitosa: ${processedCount} clientes procesados.`);
             setIsImportModalOpen(false);
             fetchClientes();
         } catch (err: any) {
@@ -2677,12 +2700,12 @@ export default function ClientesPage() {
                                     <h4 className="font-bold text-white mb-1">Formato requerido</h4>
                                     <p className="text-sm text-blue-200/70 leading-relaxed">
                                         El archivo debe ser un CSV con las cabeceras: 
-                                        <code className="mx-2 px-2 py-0.5 bg-blue-500/20 rounded-lg text-blue-300">Nombre_Completo, Telefono, Correo, Tarifa, Plan, Dia_De_Pago</code>
+                                        <code className="mx-2 px-2 py-0.5 bg-blue-500/20 rounded-lg text-blue-300">Nombre_Completo, Telefono, Correo, Tarifa, Plan, Dia_De_Pago, Usuarios_Plataforma</code>
                                     </p>
                                     <button 
                                         onClick={() => {
-                                            const template = "Nombre_Completo,Telefono,Correo,Tarifa,Plan,Dia_De_Pago,Requiere_Factura,Fecha_Ultimo_Pago\nEjemplo Cliente,+507 0000-0000,ejemplo@correo.com,15.00,Mensualidad,1,false,2024-01-01";
-                                            const blob = new Blob([template], { type: 'text/csv' });
+                                            const template = "Nombre_Completo,Telefono,Correo,Tarifa,Plan,Dia_De_Pago,Requiere_Factura,Fecha_Ultimo_Pago,Usuarios_Plataforma\nEjemplo Cliente,+507 0000-0000,ejemplo@correo.com,15.00,Mensualidad,1,false,2024-01-01,User1;User2";
+                                            const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
                                             const url = URL.createObjectURL(blob);
                                             const a = document.createElement('a');
                                             a.href = url;
